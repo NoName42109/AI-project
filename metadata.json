@@ -1,0 +1,5 @@
+{
+  "name": "Vi-ét Adaptive System (Teacher Module)",
+  "description": "A specialized module for teachers to upload, parse, and categorize Vi-ét math problems from PDF documents using Gemini AI.",
+  "requestFramePermissions": []
+}
