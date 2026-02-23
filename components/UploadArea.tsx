@@ -45,35 +45,39 @@ const UploadArea: React.FC<UploadAreaProps> = ({ onFileSelect, disabled }) => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        relative border-2 border-dashed rounded-xl p-10 text-center transition-all duration-300
-        ${isDragging ? 'border-primary-500 bg-primary-50' : 'border-neutral-300 bg-white'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-primary-400'}
+        relative group cursor-pointer transition-all duration-300
+        border-2 border-dashed rounded-3xl p-12 text-center
+        ${isDragging 
+          ? 'border-primary-300 bg-pastel-blue scale-[1.01]' 
+          : 'border-neutral-200 bg-white hover:border-primary-200 hover:bg-neutral-50'}
+        ${disabled ? 'opacity-50 pointer-events-none' : ''}
       `}
     >
       <input
         type="file"
         accept="application/pdf"
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
         onChange={handleChange}
         disabled={disabled}
       />
       
-      <div className="flex flex-col items-center justify-center space-y-4">
-        <div className={`p-4 rounded-full ${isDragging ? 'bg-primary-100' : 'bg-neutral-100'}`}>
-          <svg className="w-8 h-8 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      <div className="flex flex-col items-center justify-center space-y-5 pointer-events-none">
+        <div className={`
+          w-16 h-16 rounded-2xl flex items-center justify-center transition-colors duration-300
+          ${isDragging ? 'bg-white text-primary-600 shadow-sm' : 'bg-pastel-purple text-primary-500'}
+        `}>
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
         </div>
+        
         <div>
-          <p className="text-lg font-medium text-neutral-800">
-            Kéo thả tài liệu PDF vào đây
+          <h3 className="text-lg font-semibold text-neutral-800 mb-1">
+            Tải lên đề bài PDF
+          </h3>
+          <p className="text-sm text-neutral-400">
+            Kéo thả hoặc click để chọn tài liệu
           </p>
-          <p className="text-sm text-neutral-500 mt-1">
-            hoặc click để chọn file từ máy tính
-          </p>
-        </div>
-        <div className="text-xs text-neutral-400 bg-neutral-50 px-3 py-1 rounded-full">
-          Hỗ trợ PDF (max 10MB)
         </div>
       </div>
     </div>
