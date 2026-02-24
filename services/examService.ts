@@ -5,44 +5,12 @@ import {
   ExamQuestion, 
   VietProblemType, 
   DifficultyLevel,
-  ProcessedQuestion
+  ProcessedQuestion,
+  StudentExam
 } from "../types";
-
-// Mock Teacher Bank (In real app, this would be a database call)
-const MOCK_TEACHER_BANK: ProcessedQuestion[] = [
-  {
-    id: "tb_1",
-    raw_text: "...",
-    cleaned_content: "Cho phương trình $x^2 - 5x + 6 = 0$. Tính tổng và tích hai nghiệm.",
-    detected_equation: "x^2 - 5x + 6 = 0",
-    sub_topic: VietProblemType.BASIC_SUM_PRODUCT,
-    difficulty_score: 0.2,
-    difficulty_level: 'EASY',
-    has_parameter: false,
-    is_multi_step: false,
-    estimated_time_seconds: 120,
-    is_valid_viet: true,
-    status: 'PUBLISHED',
-    created_at: Date.now(),
-    source_file: "bank.pdf"
-  },
-  {
-    id: "tb_2",
-    raw_text: "...",
-    cleaned_content: "Cho phương trình $x^2 - 2(m+1)x + m^2 = 0$. Tìm m để phương trình có hai nghiệm phân biệt.",
-    detected_equation: "x^2 - 2(m+1)x + m^2 = 0",
-    sub_topic: VietProblemType.FIND_M_CONDITION,
-    difficulty_score: 0.6,
-    difficulty_level: 'MEDIUM',
-    has_parameter: true,
-    is_multi_step: true,
-    estimated_time_seconds: 300,
-    is_valid_viet: true,
-    status: 'PUBLISHED',
-    created_at: Date.now(),
-    source_file: "bank.pdf"
-  }
-];
+import { questionBankService } from "./questionBankService";
+import { collection, addDoc, updateDoc, doc } from "firebase/firestore";
+import { db } from "./firebase";
 
 class ExamService {
   private genAI: GoogleGenAI | null = null;
@@ -57,8 +25,6 @@ class ExamService {
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {
         console.warn("Gemini API Key is missing!");
-        // We can throw here or return a dummy if we want to fail gracefully later
-        // But throwing here is better than crashing on load
         throw new Error("Gemini API Key is missing. Please set VITE_GEMINI_API_KEY.");
       }
       this.genAI = new GoogleGenAI({ apiKey });
@@ -72,40 +38,51 @@ class ExamService {
   async generateExam(request: ExamRequest): Promise<ExamResponse> {
     console.log("Generating exam for:", request);
 
-    // Step 1: Query Teacher Bank
-    const bankQuestions = this.queryTeacherBank(request);
+    // Step 1: Determine structure based on duration (if provided) or question count
+    // For now, assume request.questionCount is the target
+    const targetCount = request.questionCount;
     
+    // Simple distribution logic: 40% Easy, 40% Medium, 20% Hard
+    const easyCount = Math.floor(targetCount * 0.4);
+    const mediumCount = Math.floor(targetCount * 0.4);
+    const hardCount = targetCount - easyCount - mediumCount;
+
+    // Step 2: Fetch from Bank
+    const [easyQ, mediumQ, hardQ] = await Promise.all([
+      questionBankService.getQuestionsByDifficulty('EASY', easyCount),
+      questionBankService.getQuestionsByDifficulty('MEDIUM', mediumCount),
+      questionBankService.getQuestionsByDifficulty('HARD', hardCount),
+    ]);
+
     let finalQuestions: ExamQuestion[] = [];
     let source: "teacher_bank" | "ai_generated" | "mixed" = "teacher_bank";
 
-    // Step 2: Check if sufficient
-    if (bankQuestions.length >= request.questionCount) {
-      // Use bank questions
-      finalQuestions = bankQuestions.slice(0, request.questionCount).map(q => ({
-        id: q.id,
-        content: q.cleaned_content, // Assuming cleaned_content is close to LaTeX or raw text
-        difficulty: q.difficulty_level,
-        type: q.sub_topic as VietProblemType,
-        isAiGenerated: false
-      }));
-    } else {
-      // Step 3: Generate missing questions via AI
-      const missingCount = request.questionCount - bankQuestions.length;
-      source = bankQuestions.length > 0 ? "mixed" : "ai_generated";
-      
-      // Convert existing bank questions to ExamQuestion format
-      const existing = bankQuestions.map(q => ({
-        id: q.id,
-        content: q.cleaned_content,
-        difficulty: q.difficulty_level,
-        type: q.sub_topic as VietProblemType,
-        isAiGenerated: false
-      }));
+    // Step 3: Fill missing with AI
+    const missingEasy = easyCount - easyQ.length;
+    const missingMedium = mediumCount - mediumQ.length;
+    const missingHard = hardCount - hardQ.length;
 
-      // Generate new ones
-      const generated = await this.generateAiQuestions(missingCount, request.difficultyLevel);
+    if (missingEasy > 0 || missingMedium > 0 || missingHard > 0) {
+      source = (easyQ.length + mediumQ.length + hardQ.length) > 0 ? "mixed" : "ai_generated";
       
-      finalQuestions = [...existing, ...generated];
+      const generatedEasy = missingEasy > 0 ? await this.generateAiQuestions(missingEasy, 'EASY') : [];
+      const generatedMedium = missingMedium > 0 ? await this.generateAiQuestions(missingMedium, 'MEDIUM') : [];
+      const generatedHard = missingHard > 0 ? await this.generateAiQuestions(missingHard, 'HARD') : [];
+
+      finalQuestions = [
+        ...easyQ.map(this.mapToExamQuestion),
+        ...generatedEasy,
+        ...mediumQ.map(this.mapToExamQuestion),
+        ...generatedMedium,
+        ...hardQ.map(this.mapToExamQuestion),
+        ...generatedHard
+      ];
+    } else {
+      finalQuestions = [
+        ...easyQ.map(this.mapToExamQuestion),
+        ...mediumQ.map(this.mapToExamQuestion),
+        ...hardQ.map(this.mapToExamQuestion)
+      ];
     }
 
     // Step 4: Format to LaTeX Exam
@@ -132,17 +109,14 @@ class ExamService {
     };
   }
 
-  private queryTeacherBank(request: ExamRequest): ProcessedQuestion[] {
-    // Mock filtering logic
-    return MOCK_TEACHER_BANK.filter(q => {
-      // Filter by subtopic if provided
-      if (request.subTopics && request.subTopics.length > 0) {
-        if (!request.subTopics.includes(q.sub_topic as VietProblemType)) return false;
-      }
-      // Filter by difficulty (loose match for now)
-      // In real app, we might want a range
-      return true; 
-    });
+  private mapToExamQuestion(q: any): ExamQuestion {
+    return {
+      id: q.id,
+      content: q.content_latex || q.cleaned_content,
+      difficulty: q.difficulty || q.difficulty_level,
+      type: (q.sub_topic as VietProblemType) || VietProblemType.OTHER,
+      isAiGenerated: false
+    };
   }
 
   private async generateAiQuestions(count: number, difficulty: DifficultyLevel): Promise<ExamQuestion[]> {
@@ -208,7 +182,7 @@ class ExamService {
       return Array(count).fill(null).map((_, idx) => ({
         id: `fallback_${idx}`,
         content: "Cho phương trình $x^2 - 3x + 2 = 0$. Tính $x_1 + x_2$.",
-        difficulty: 'EASY',
+        difficulty: difficulty,
         type: VietProblemType.BASIC_SUM_PRODUCT,
         isAiGenerated: true
       }));
@@ -281,6 +255,60 @@ class ExamService {
     // Replace raw x^2 with $x^2$ if missing, but be careful not to double wrap
     // For this prototype, assume content is mostly clean or AI generated clean LaTeX
     return content;
+  }
+
+  /**
+   * Create a mock exam session in Firestore
+   */
+  async startExamSession(studentId: string, duration: number): Promise<StudentExam> {
+    const questionCount = duration === 15 ? 5 : duration === 30 ? 8 : 12;
+    
+    // Generate questions
+    const examResponse = await this.generateExam({
+      topic: "VIET",
+      difficultyLevel: 'MEDIUM', // Default to medium for mixed exam
+      questionCount: questionCount,
+      studentId
+    });
+
+    const examData: Omit<StudentExam, "id"> = {
+      studentId,
+      config: {
+        timeOption: duration,
+        totalQuestions: questionCount
+      },
+      questions: examResponse.questions.map(q => ({
+        id: q.id,
+        content: q.content,
+        difficulty: q.difficulty
+      })),
+      answers: {},
+      startedAt: Date.now()
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, "exam_sessions"), examData);
+      return { id: docRef.id, ...examData };
+    } catch (error) {
+      console.error("Error starting exam session:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Submit exam results
+   */
+  async submitExamSession(examId: string, results: any): Promise<void> {
+    try {
+      const examRef = doc(db, "exam_sessions", examId);
+      await updateDoc(examRef, {
+        result: results,
+        submittedAt: Date.now()
+      });
+    } catch (error) {
+      console.error("Error submitting exam session:", error);
+      throw error;
+    }
   }
 }
 

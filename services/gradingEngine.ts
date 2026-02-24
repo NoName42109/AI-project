@@ -14,7 +14,7 @@ export const gradingEngine = {
     standardSolution?: string
   ): Promise<GradingResult> => {
     
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("API Key missing");
 
     const ai = new GoogleGenAI({ apiKey });
@@ -73,7 +73,6 @@ export const gradingEngine = {
         model: model,
         contents: prompt,
         config: {
-          thinkingConfig: { thinkingBudget: 4096 }, // Moderate budget for grading logic
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,

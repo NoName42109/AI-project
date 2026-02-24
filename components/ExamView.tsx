@@ -1,181 +1,307 @@
-import React, { useState, useEffect } from 'react';
-import { ExamResponse, ExamQuestion } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { StudentExam, ExamQuestion, GradingResult } from '../types';
 import { examService } from '../services/examService';
+import { gradingEngine } from '../services/gradingEngine';
 import MathDisplay from './MathDisplay';
+import VoiceInput from './VoiceInput';
 
 interface ExamViewProps {
   studentId: string;
   onBack: () => void;
 }
 
+type ExamStatus = 'SETUP' | 'LOADING' | 'ACTIVE' | 'SUBMITTING' | 'COMPLETED';
+
 const ExamView: React.FC<ExamViewProps> = ({ studentId, onBack }) => {
-  const [exam, setExam] = useState<ExamResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<ExamStatus>('SETUP');
+  const [examData, setExamData] = useState<StudentExam | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [gradingResults, setGradingResults] = useState<Record<string, GradingResult>>({});
+  const [finalScore, setFinalScore] = useState(0);
 
+  // Timer
   useEffect(() => {
-    const fetchExam = async () => {
-      try {
-        setLoading(true);
-        // Request a new exam
-        const response = await examService.generateExam({
-          topic: "VIET",
-          difficultyLevel: "MEDIUM", // Default for now
-          questionCount: 5, // Reduced for demo
-          studentId: studentId
+    let timer: NodeJS.Timeout;
+    if (status === 'ACTIVE' && timeLeft > 0) {
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            handleSubmitExam();
+            return 0;
+          }
+          return prev - 1;
         });
-        setExam(response);
-      } catch (err) {
-        console.error("Failed to generate exam:", err);
-        setError("Không thể tạo đề kiểm tra. Vui lòng thử lại sau.");
-      } finally {
-        setLoading(false);
-      }
-    };
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [status, timeLeft]);
 
-    fetchExam();
-  }, [studentId]);
-
-  // Helper to parse text and render math
-  const renderContentWithMath = (text: string) => {
-    // Split by $...$ for inline math
-    const parts = text.split(/(\$[^$]+\$)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('$') && part.endsWith('$')) {
-        const latex = part.slice(1, -1);
-        return <MathDisplay key={index} latex={latex} />;
-      }
-      return <span key={index}>{part}</span>;
-    });
+  const handleStartExam = async (duration: number) => {
+    setStatus('LOADING');
+    try {
+      const session = await examService.startExamSession(studentId, duration);
+      setExamData(session);
+      setTimeLeft(duration * 60);
+      setStatus('ACTIVE');
+    } catch (error) {
+      console.error("Failed to start exam:", error);
+      alert("Không thể bắt đầu bài kiểm tra. Vui lòng thử lại.");
+      setStatus('SETUP');
+    }
   };
 
-  if (loading) {
+  const handleAnswerChange = (text: string) => {
+    if (!examData) return;
+    const qId = examData.questions[currentQuestionIndex].id;
+    setAnswers(prev => ({ ...prev, [qId]: text }));
+  };
+
+  const handleSubmitExam = async () => {
+    if (!examData) return;
+    setStatus('SUBMITTING');
+
+    // Grade all answers
+    const results: Record<string, GradingResult> = {};
+    let totalScore = 0;
+    let correctCount = 0;
+
+    // Parallel grading could be better, but sequential for simplicity/rate-limits
+    for (const q of examData.questions) {
+      const studentAns = answers[q.id] || "";
+      // In a real app, we'd fetch the solution or have AI grade without it
+      const result = await gradingEngine.gradeSubmission(q.content, studentAns);
+      results[q.id] = result;
+      totalScore += result.score;
+      if (result.is_correct) correctCount++;
+    }
+
+    const finalAvgScore = totalScore / examData.questions.length;
+    setGradingResults(results);
+    setFinalScore(finalAvgScore);
+
+    // Save to Firestore
+    try {
+      await examService.submitExamSession(examData.id, {
+        totalScore: finalAvgScore,
+        summary: `Đúng ${correctCount}/${examData.questions.length} câu.`,
+        details: Object.entries(results).map(([qid, res]) => ({ questionId: qid, ...res }))
+      });
+    } catch (e) {
+      console.error("Error saving exam result", e);
+    }
+
+    setStatus('COMPLETED');
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // --- RENDER: SETUP ---
+  if (status === 'SETUP') {
     return (
-      <div className="flex flex-col items-center justify-center h-full space-y-4 bg-neutral-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-        <p className="text-neutral-500 font-medium">Đang tạo đề kiểm tra...</p>
-      </div>
-    );
-  }
-
-  if (error || !exam) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full space-y-4 bg-neutral-50">
-        <div className="text-red-500 text-xl font-bold">Lỗi</div>
-        <p className="text-neutral-600">{error || "Không có dữ liệu đề thi."}</p>
-        <button 
-          onClick={onBack}
-          className="px-6 py-2 bg-neutral-200 hover:bg-neutral-300 rounded-lg font-medium transition-colors"
-        >
-          Quay lại
-        </button>
-      </div>
-    );
-  }
-
-  const easyQuestions = exam.questions.filter(q => q.difficulty === 'EASY');
-  const mediumQuestions = exam.questions.filter(q => q.difficulty === 'MEDIUM');
-  const hardQuestions = exam.questions.filter(q => ['HARD', 'EXPERT'].includes(q.difficulty));
-
-  let currentIndex = 1;
-
-  // Helper to render questions by difficulty group
-  const renderSection = (title: string, questions: ExamQuestion[], startIndex: number) => {
-    if (questions.length === 0) return null;
-    
-    return (
-      <div className="mb-12">
-        <h3 className="text-lg font-bold text-primary-800 uppercase border-b-2 border-primary-100 pb-2 mb-6">
-          {title}
-        </h3>
-        <div className="space-y-8">
-          {questions.map((q, idx) => (
-            <div key={q.id} className="relative pl-10">
-              <span className="absolute left-0 top-0 w-8 h-8 bg-neutral-100 rounded-full flex items-center justify-center font-bold text-neutral-600 text-sm">
-                {startIndex + idx}
-              </span>
-              <div className="text-neutral-800 text-lg leading-relaxed font-serif">
-                {renderContentWithMath(q.content)}
-              </div>
-              <div className="mt-2 flex gap-2 opacity-50 hover:opacity-100 transition-opacity">
-                <span className="text-[10px] uppercase font-bold text-neutral-400 border border-neutral-200 px-1 rounded">
-                  {q.type}
+      <div className="flex flex-col h-full bg-surface items-center justify-center p-4 animate-fade-in-up">
+        <div className="bg-white p-8 rounded-3xl shadow-card max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </div>
+          <h2 className="text-2xl font-bold text-neutral-900 mb-2">Thi thử Vi-ét</h2>
+          <p className="text-neutral-500 mb-8">Chọn thời gian làm bài. Hệ thống sẽ tự động tạo đề phù hợp.</p>
+          
+          <div className="space-y-3">
+            {[15, 30, 45].map(min => (
+              <button
+                key={min}
+                onClick={() => handleStartExam(min)}
+                className="w-full py-4 px-6 rounded-xl border border-neutral-200 hover:border-primary-500 hover:bg-primary-50 transition-all flex justify-between items-center group"
+              >
+                <span className="font-bold text-neutral-700 group-hover:text-primary-700">{min} Phút</span>
+                <span className="text-sm text-neutral-400 group-hover:text-primary-500">
+                  {min === 15 ? '5 câu' : min === 30 ? '8 câu' : '12 câu'}
                 </span>
-                {q.isAiGenerated && (
-                  <span className="text-[10px] uppercase font-bold text-purple-400 border border-purple-200 px-1 rounded">
-                    AI
-                  </span>
-                )}
+              </button>
+            ))}
+          </div>
+
+          <button onClick={onBack} className="mt-8 text-neutral-400 hover:text-neutral-600 text-sm font-medium">
+            Quay lại Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER: LOADING ---
+  if (status === 'LOADING' || status === 'SUBMITTING') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-surface">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
+        <p className="text-neutral-500 font-medium">
+          {status === 'LOADING' ? 'Đang tạo đề thi...' : 'Đang chấm điểm...'}
+        </p>
+      </div>
+    );
+  }
+
+  // --- RENDER: ACTIVE EXAM ---
+  if (status === 'ACTIVE' && examData) {
+    const currentQ = examData.questions[currentQuestionIndex];
+    return (
+      <div className="flex flex-col h-full bg-surface">
+        {/* Header */}
+        <div className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-bold text-neutral-500">Câu {currentQuestionIndex + 1}/{examData.questions.length}</span>
+            <div className={`px-3 py-1 rounded-lg font-mono font-bold ${timeLeft < 60 ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-700'}`}>
+              {formatTime(timeLeft)}
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              if(window.confirm("Nộp bài sớm?")) handleSubmitExam();
+            }}
+            className="px-4 py-2 bg-neutral-900 text-white text-sm font-bold rounded-lg hover:bg-neutral-800"
+          >
+            Nộp bài
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Question List Sidebar */}
+            <div className="hidden lg:block col-span-1">
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
+                <div className="grid grid-cols-4 gap-2">
+                  {examData.questions.map((q, idx) => (
+                    <button
+                      key={q.id}
+                      onClick={() => setCurrentQuestionIndex(idx)}
+                      className={`h-10 w-10 rounded-lg font-bold text-sm transition-all
+                        ${idx === currentQuestionIndex ? 'bg-primary-600 text-white shadow-md' : 
+                          answers[q.id] ? 'bg-primary-100 text-primary-700' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'}
+                      `}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          ))}
+
+            {/* Main Question Area */}
+            <div className="col-span-1 lg:col-span-2 space-y-6">
+              <div className="bg-white rounded-2xl p-8 shadow-card border border-neutral-100 min-h-[300px]">
+                <div className="flex justify-between mb-4">
+                  <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Đề bài</span>
+                  <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">{currentQ.difficulty}</span>
+                </div>
+                <div className="text-lg text-neutral-800 leading-relaxed">
+                  <MathDisplay latex={currentQ.content} />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl p-1 shadow-card border border-neutral-200">
+                <textarea
+                  value={answers[currentQ.id] || ""}
+                  onChange={(e) => handleAnswerChange(e.target.value)}
+                  placeholder="Nhập câu trả lời của bạn..."
+                  className="w-full h-40 p-6 resize-none focus:outline-none text-base text-neutral-800 font-serif"
+                />
+                <div className="p-4 border-t border-neutral-100 bg-neutral-50 rounded-b-xl flex justify-between items-center">
+                   <VoiceInput 
+                     onResult={(res) => {
+                       if (res.is_correct_syntax) {
+                         const val = res.calculated_result ? `${res.latex_expression} = ${res.calculated_result}` : res.latex_expression;
+                         handleAnswerChange((answers[currentQ.id] || "") + " " + val);
+                       }
+                     }}
+                   />
+                   <div className="flex gap-2">
+                     <button
+                       disabled={currentQuestionIndex === 0}
+                       onClick={() => setCurrentQuestionIndex(prev => prev - 1)}
+                       className="px-4 py-2 text-neutral-500 hover:bg-neutral-200 rounded-lg disabled:opacity-50"
+                     >
+                       Trước
+                     </button>
+                     <button
+                       disabled={currentQuestionIndex === examData.questions.length - 1}
+                       onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
+                       className="px-4 py-2 bg-primary-100 text-primary-700 font-bold rounded-lg hover:bg-primary-200 disabled:opacity-50"
+                     >
+                       Sau
+                     </button>
+                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
-  };
+  }
 
-  return (
-    <div className="flex flex-col h-full bg-neutral-50 animate-fade-in-up">
-      {/* Header */}
-      <div className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={onBack}
-            className="flex items-center gap-2 text-neutral-500 hover:text-neutral-800 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            <span className="font-medium text-sm">Thoát</span>
-          </button>
-          <div className="h-6 w-px bg-neutral-200"></div>
-          <div>
-             <h1 className="text-sm font-bold text-neutral-800 uppercase tracking-wide">ĐỀ KIỂM TRA HỆ THỨC VI-ÉT</h1>
-             <div className="flex items-center gap-2 text-xs text-neutral-500">
-               <span>Thời gian: {exam.metadata.estimated_time_minutes} phút</span>
-               <span>•</span>
-               <span>Số câu: {exam.metadata.number_of_questions}</span>
-             </div>
-          </div>
+  // --- RENDER: COMPLETED ---
+  if (status === 'COMPLETED' && examData) {
+    return (
+      <div className="flex flex-col h-full bg-surface animate-fade-in-up">
+        <div className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+          <h1 className="text-lg font-bold text-neutral-800">Kết quả bài thi</h1>
+          <button onClick={onBack} className="text-neutral-500 hover:text-neutral-800">Thoát</button>
         </div>
 
-        <button 
-          className="px-4 py-2 bg-primary-600 text-white text-sm font-bold rounded-lg hover:bg-primary-700 transition-colors shadow-md flex items-center gap-2"
-          onClick={() => {
-            const blob = new Blob([exam.latex_exam], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `De_Kiem_Tra_Viet_${Date.now()}.tex`;
-            a.click();
-          }}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-          Tải LaTeX
-        </button>
-      </div>
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-3xl mx-auto space-y-8">
+            {/* Score Card */}
+            <div className="bg-neutral-900 text-white rounded-3xl p-8 text-center shadow-xl">
+              <p className="text-neutral-400 uppercase tracking-widest text-sm font-bold mb-2">Điểm số của bạn</p>
+              <div className="text-6xl font-bold mb-4 text-primary-400">{finalScore.toFixed(1)}<span className="text-2xl text-neutral-500">/10</span></div>
+              <p className="text-neutral-300 max-w-md mx-auto">
+                {finalScore >= 8 ? "Xuất sắc! Bạn đã nắm vững kiến thức." : finalScore >= 5 ? "Khá tốt, nhưng cần luyện tập thêm." : "Cần cố gắng nhiều hơn nhé!"}
+              </p>
+            </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        <div className="max-w-4xl mx-auto bg-white p-8 md:p-12 rounded-2xl shadow-card min-h-[800px]">
-          
-          {/* Exam Header on Paper */}
-          <div className="text-center mb-12 border-b-2 border-neutral-100 pb-8">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-2 uppercase font-serif">ĐỀ KIỂM TRA CHUYÊN ĐỀ HỆ THỨC VI-ÉT – LỚP 9</h2>
-            <p className="text-neutral-500 italic font-serif">Thời gian làm bài: {exam.metadata.estimated_time_minutes} phút</p>
+            {/* Detailed Review */}
+            <div className="space-y-6">
+              <h3 className="text-xl font-bold text-neutral-800">Chi tiết bài làm</h3>
+              {examData.questions.map((q, idx) => {
+                const result = gradingResults[q.id];
+                return (
+                  <div key={q.id} className="bg-white rounded-2xl p-6 shadow-sm border border-neutral-100">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="font-bold text-neutral-500">Câu {idx + 1}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${result?.is_correct ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {result?.is_correct ? 'ĐÚNG' : 'SAI'} ({result?.score}/10)
+                      </span>
+                    </div>
+                    <div className="mb-4 text-neutral-800">
+                      <MathDisplay latex={q.content} />
+                    </div>
+                    <div className="bg-neutral-50 p-4 rounded-xl mb-4">
+                      <p className="text-xs text-neutral-400 uppercase font-bold mb-1">Bài làm của bạn:</p>
+                      <p className="font-serif text-neutral-700">{answers[q.id] || "(Không trả lời)"}</p>
+                    </div>
+                    {result && (
+                      <div className={`p-4 rounded-xl ${result.is_correct ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'}`}>
+                        <p className="font-bold text-sm mb-1">{result.feedback_short}</p>
+                        <p className="text-sm opacity-90">{result.feedback_detailed}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-
-          {/* Sections */}
-          {renderSection("Phần I: Cơ bản", easyQuestions, currentIndex)}
-          {(() => { currentIndex += easyQuestions.length; return null; })()}
-
-          {renderSection("Phần II: Vận dụng", mediumQuestions, currentIndex)}
-          {(() => { currentIndex += mediumQuestions.length; return null; })()}
-
-          {renderSection("Phần III: Nâng cao", hardQuestions, currentIndex)}
-
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 };
 
 export default ExamView;

@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ProcessedQuestion } from "../types";
 
 const processRawTextWithGemini = async (rawText: string, fileName: string): Promise<ProcessedQuestion[]> => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("API Key is missing.");
   }
@@ -79,7 +79,6 @@ const processRawTextWithGemini = async (rawText: string, fileName: string): Prom
       model: modelId,
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 32768 }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,

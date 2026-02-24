@@ -42,7 +42,7 @@ export const aiLayer = {
       "rejection_reason": string (Nếu valid=false, chọn: "Không có phương trình bậc hai" | "Không có hệ thức tổng/tích" | "Nội dung không xác định" | "Khác"),
       "sub_topic": string (Nếu valid=true, chọn: "Tính tổng tích" | "Tìm tham số m" | "Biểu thức đối xứng" | "Biểu thức không đối xứng" | "Nghiệm nguyên" | "Hệ thức độc lập m"),
       "detected_equation": string (Trích xuất phương trình chính, hoặc null),
-      "cleaned_content": string (Nội dung đã làm sạch),
+      "cleaned_content": string (Nội dung đã làm sạch, chuyển về LaTeX chuẩn),
       "difficulty_score": number (0.1 - 1.0)
     }
     `;
@@ -52,7 +52,6 @@ export const aiLayer = {
         model: model,
         contents: prompt,
         config: {
-          thinkingConfig: { thinkingBudget: 2048 }, // Fast thinking
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -64,7 +63,7 @@ export const aiLayer = {
               cleaned_content: { type: Type.STRING },
               difficulty_score: { type: Type.NUMBER },
             },
-            required: ["is_valid_viet", "rejection_reason", "sub_topic", "cleaned_content"]
+            required: ["is_valid_viet", "sub_topic", "cleaned_content"]
           }
         }
       });

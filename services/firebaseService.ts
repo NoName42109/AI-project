@@ -1,5 +1,5 @@
-import { db } from "./firebaseConfig";
-import { collection, addDoc, getDocs, query, where, limit, orderBy } from "firebase/firestore";
+import { db } from "./firebase";
+import { collection, addDoc, getDocs, query, where, limit, orderBy, QueryConstraint } from "firebase/firestore";
 import { ProcessedQuestion, VietProblemType, DifficultyLevel } from "../types";
 
 const QUESTIONS_COLLECTION = "questions";
@@ -37,9 +37,8 @@ export const firebaseService = {
     limitCount: number = 20
   ): Promise<ProcessedQuestion[]> {
     try {
-      let q = collection(db, QUESTIONS_COLLECTION);
-      const constraints = [];
-
+      const constraints: QueryConstraint[] = [];
+      
       if (topic) {
         constraints.push(where("sub_topic", "==", topic));
       }
@@ -54,8 +53,8 @@ export const firebaseService = {
       // Limit
       constraints.push(limit(limitCount));
 
-      const queryRef = query(q, ...constraints);
-      const querySnapshot = await getDocs(queryRef);
+      const q = query(collection(db, QUESTIONS_COLLECTION), ...constraints);
+      const querySnapshot = await getDocs(q);
 
       const questions: ProcessedQuestion[] = [];
       querySnapshot.forEach((doc) => {

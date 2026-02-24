@@ -45,6 +45,7 @@ class VoiceGradingService {
     try {
       const ai = this.getGenAI();
       const base64Audio = await this.blobToBase64(audioBlob);
+      const mimeType = audioBlob.type || "audio/wav";
       
       // Define the schema for the structured output
       const responseSchema = {
@@ -125,17 +126,19 @@ class VoiceGradingService {
 
       const response = await ai.models.generateContent({
         model: this.modelId,
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: "audio/mp3", // Assuming mp3/wav/webm compatibility
-                data: base64Audio
-              }
-            },
-            { text: prompt }
-          ]
-        },
+        contents: [
+          {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Audio
+                }
+              },
+              { text: prompt }
+            ]
+          }
+        ],
         config: {
           responseMimeType: "application/json",
           responseSchema: responseSchema,

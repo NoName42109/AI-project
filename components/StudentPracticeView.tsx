@@ -1,36 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { ProcessedQuestion, VietProblemType, GradingResult, VoiceMathResult, VoiceSubmissionResult } from '../types';
+import { ProcessedQuestion, VietProblemType, GradingResult, VoiceMathResult, VoiceSubmissionResult, DifficultyLevel } from '../types';
 import { gradingEngine } from '../services/gradingEngine';
 import { voiceGradingService } from '../services/voiceGradingService';
+import { questionBankService } from '../services/questionBankService';
 import GradingFeedback from './GradingFeedback';
 import VoiceInput from './VoiceInput';
 import VoiceSubmission from './VoiceSubmission';
 import VoiceResultView from './VoiceResultView';
-
-// MOCK DATA for demonstration (In real app, this comes from Adaptive Engine)
-const MOCK_QUESTION: ProcessedQuestion = {
-  id: "mock_1",
-  raw_text: "...",
-  cleaned_content: "Cho phương trình x^2 - 7x + 12 = 0. Không giải phương trình, hãy tính giá trị biểu thức A = x1^2 + x2^2.",
-  detected_equation: "x^2 - 7x + 12 = 0",
-  sub_topic: VietProblemType.SYMMETRIC_EXPRESSION,
-  difficulty_score: 0.4,
-  difficulty_level: 'MEDIUM',
-  has_parameter: false,
-  is_multi_step: true,
-  estimated_time_seconds: 300,
-  is_valid_viet: true,
-  status: 'PUBLISHED',
-  created_at: Date.now(),
-  source_file: "De_thi_HK1.pdf"
-};
 
 interface StudentPracticeViewProps {
   onBack: () => void;
 }
 
 const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => {
-  const [question, setQuestion] = useState<ProcessedQuestion>(MOCK_QUESTION);
+  const [question, setQuestion] = useState<ProcessedQuestion | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Submission Mode
   const [submissionMode, setSubmissionMode] = useState<'TEXT' | 'VOICE'>('TEXT');
@@ -46,7 +30,51 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
 
   const [isGrading, setIsGrading] = useState(false);
 
+  const fetchRandomQuestion = async () => {
+    setIsLoading(true);
+    try {
+      // Simple random difficulty logic for now
+      const difficulties: DifficultyLevel[] = ['EASY', 'MEDIUM', 'HARD'];
+      const randomDiff = difficulties[Math.floor(Math.random() * difficulties.length)];
+      
+      const q = await questionBankService.getRandomQuestion(randomDiff);
+      
+      if (q) {
+        // Map Question to ProcessedQuestion
+        const processed: ProcessedQuestion = {
+          id: q.id,
+          raw_text: q.content_latex,
+          cleaned_content: q.content_latex,
+          detected_equation: (q as any).detected_equation || null,
+          sub_topic: q.sub_topic as VietProblemType || VietProblemType.OTHER,
+          difficulty_score: q.difficulty === 'EASY' ? 0.3 : q.difficulty === 'MEDIUM' ? 0.5 : 0.8,
+          difficulty_level: q.difficulty,
+          has_parameter: false, // Metadata lost in simple mapping, assume false or check content
+          is_multi_step: q.difficulty !== 'EASY',
+          estimated_time_seconds: 300,
+          is_valid_viet: true,
+          status: 'PUBLISHED',
+          created_at: q.createdAt,
+          source_file: "Question Bank"
+        };
+        setQuestion(processed);
+      } else {
+        alert("Không tìm thấy câu hỏi nào trong kho dữ liệu.");
+      }
+    } catch (error) {
+      console.error("Error fetching question:", error);
+      alert("Lỗi tải câu hỏi.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRandomQuestion();
+  }, []);
+
   const handleSubmit = async () => {
+    if (!question) return;
     if (submissionMode === 'TEXT' && !studentAnswer.trim()) return;
     if (submissionMode === 'VOICE' && !voiceBlob) return;
 
@@ -56,7 +84,7 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
         const result = await gradingEngine.gradeSubmission(
           question.cleaned_content,
           studentAnswer,
-          question.solution
+          undefined // No standard solution available
         );
         setGradingResult(result);
       } else {
@@ -80,7 +108,7 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
     setVoiceInputResult(null);
     setVoiceBlob(null);
     setVoiceSubmissionResult(null);
-    alert("Hệ thống sẽ tải câu hỏi tiếp theo dựa trên Adaptive Engine (Mock).");
+    fetchRandomQuestion();
   };
 
   const handleVoiceInputResult = (result: VoiceMathResult) => {
@@ -93,6 +121,23 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
       setStudentAnswer(prev => prev + (prev ? "\n" : "") + mathLine);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-surface">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!question) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-surface">
+        <p className="text-neutral-500 mb-4">Không có dữ liệu câu hỏi.</p>
+        <button onClick={onBack} className="text-primary-600 hover:underline">Quay lại</button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-surface animate-fade-in-up">

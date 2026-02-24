@@ -6,7 +6,7 @@ export const voiceMathService = {
    * Analyze audio blob directly with Gemini Native Audio model
    */
   analyzeAudioMath: async (audioBlob: Blob): Promise<VoiceMathResult> => {
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("API Key missing");
 
     const ai = new GoogleGenAI({ apiKey });
@@ -14,6 +14,7 @@ export const voiceMathService = {
 
     // Convert Blob to Base64
     const base64Audio = await blobToBase64(audioBlob);
+    const mimeType = audioBlob.type || "audio/wav";
 
     const prompt = `
     ROLE: Bạn là trợ lý toán học Vi-ét lớp 9 (Vieta's Formulas Tutor).
@@ -47,12 +48,14 @@ export const voiceMathService = {
     try {
       const response = await ai.models.generateContent({
         model: model,
-        contents: {
-          parts: [
-            { inlineData: { mimeType: "audio/wav", data: base64Audio } }, // Assuming recorded as WAV/WebM, Gemini handles standard formats
-            { text: prompt }
-          ]
-        },
+        contents: [
+          {
+            parts: [
+              { inlineData: { mimeType: mimeType, data: base64Audio } },
+              { text: prompt }
+            ]
+          }
+        ],
         config: {
           responseMimeType: "application/json",
           responseSchema: {

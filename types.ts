@@ -231,3 +231,55 @@ export interface ExamResponse {
     estimated_time_minutes: number;
   };
 }
+
+// --- NEW CORE TYPES FOR FIRESTORE ---
+
+export interface Question {
+  id: string;
+  content_latex: string;
+  difficulty: DifficultyLevel;
+  topic: string; // "he_thuc_viet"
+  sub_topic?: string;
+  solution_hint?: string;
+  createdBy: string;
+  createdAt: number;
+  status: QuestionStatus;
+}
+
+export interface PracticeLog {
+  id: string;
+  studentId: string;
+  questionId: string;
+  audioUrl?: string;
+  transcript?: string;
+  score: number;
+  feedback: string;
+  createdAt: number;
+}
+
+export interface StudentExam {
+  id: string;
+  studentId: string;
+  config: {
+    timeOption: number; // 15, 30, 45
+    totalQuestions: number;
+  };
+  questions: {
+    id: string;
+    content: string;
+    difficulty: DifficultyLevel;
+  }[];
+  answers: Record<string, {
+    audioUrl?: string;
+    transcript?: string;
+    score?: number;
+    feedback?: string;
+  }>;
+  result?: {
+    totalScore: number;
+    summary: string;
+    details: any[];
+  };
+  startedAt: number;
+  submittedAt?: number;
+}
