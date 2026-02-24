@@ -11,10 +11,30 @@ import { DetectedBlock, ProcessedQuestion, VietProblemType } from "../../types";
 export const aiLayer = {
   analyzeBlock: async (block: DetectedBlock): Promise<ProcessedQuestion> => {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("API Key missing");
+    if (!apiKey) {
+      console.error("API Key is missing in process.env.GEMINI_API_KEY");
+      return {
+        id: block.id,
+        raw_text: block.text,
+        cleaned_content: block.text,
+        detected_equation: null,
+        sub_topic: VietProblemType.INVALID,
+        difficulty_score: 0,
+        difficulty_level: 'EASY',
+        has_parameter: false,
+        is_multi_step: false,
+        estimated_time_seconds: 0,
+        is_valid_viet: false,
+        rejection_reason: "Thiếu API Key (Kiểm tra .env)",
+        status: 'DRAFT',
+        created_at: Date.now(),
+        source_file: "upload",
+        page_number: block.pageIndex
+      };
+    }
 
     const ai = new GoogleGenAI({ apiKey });
-    const model = "gemini-3.1-pro-preview";
+    const model = "gemini-2.5-flash";
 
     const prompt = `
     ROLE: Bạn là chuyên gia thẩm định đề thi Toán lớp 9.
@@ -96,7 +116,7 @@ export const aiLayer = {
 
       return processed;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[AI Block Analysis] Error:`, error);
       // Fail safe return
       return {
@@ -111,7 +131,7 @@ export const aiLayer = {
         is_multi_step: false,
         estimated_time_seconds: 0,
         is_valid_viet: false,
-        rejection_reason: "Lỗi xử lý AI",
+        rejection_reason: `Lỗi AI: ${error?.message || String(error)}`,
         status: 'DRAFT',
         created_at: Date.now(),
         source_file: "upload"
