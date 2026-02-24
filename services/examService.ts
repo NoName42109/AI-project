@@ -7,18 +7,63 @@ import {
   DifficultyLevel,
   ProcessedQuestion
 } from "../types";
-import { firebaseService } from "./firebaseService";
+
+// Mock Teacher Bank (In real app, this would be a database call)
+const MOCK_TEACHER_BANK: ProcessedQuestion[] = [
+  {
+    id: "tb_1",
+    raw_text: "...",
+    cleaned_content: "Cho phương trình $x^2 - 5x + 6 = 0$. Tính tổng và tích hai nghiệm.",
+    detected_equation: "x^2 - 5x + 6 = 0",
+    sub_topic: VietProblemType.BASIC_SUM_PRODUCT,
+    difficulty_score: 0.2,
+    difficulty_level: 'EASY',
+    has_parameter: false,
+    is_multi_step: false,
+    estimated_time_seconds: 120,
+    is_valid_viet: true,
+    status: 'PUBLISHED',
+    created_at: Date.now(),
+    source_file: "bank.pdf"
+  },
+  {
+    id: "tb_2",
+    raw_text: "...",
+    cleaned_content: "Cho phương trình $x^2 - 2(m+1)x + m^2 = 0$. Tìm m để phương trình có hai nghiệm phân biệt.",
+    detected_equation: "x^2 - 2(m+1)x + m^2 = 0",
+    sub_topic: VietProblemType.FIND_M_CONDITION,
+    difficulty_score: 0.6,
+    difficulty_level: 'MEDIUM',
+    has_parameter: true,
+    is_multi_step: true,
+    estimated_time_seconds: 300,
+    is_valid_viet: true,
+    status: 'PUBLISHED',
+    created_at: Date.now(),
+    source_file: "bank.pdf"
+  }
+];
 
 class ExamService {
-  private genAI: GoogleGenAI;
+  private genAI: GoogleGenAI | null = null;
   private modelId: string = "gemini-2.5-flash-latest";
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY || "";
-    if (!apiKey) {
-      console.warn("Gemini API Key is missing!");
+    // Lazy initialization
+  }
+
+  private getGenAI(): GoogleGenAI {
+    if (!this.genAI) {
+      const apiKey = process.env.GEMINI_API_KEY || "";
+      if (!apiKey) {
+        console.warn("Gemini API Key is missing!");
+        // We can throw here or return a dummy if we want to fail gracefully later
+        // But throwing here is better than crashing on load
+        throw new Error("Gemini API Key is missing. Please set VITE_GEMINI_API_KEY.");
+      }
+      this.genAI = new GoogleGenAI({ apiKey });
     }
-    this.genAI = new GoogleGenAI({ apiKey });
+    return this.genAI;
   }
 
   /**
@@ -27,8 +72,8 @@ class ExamService {
   async generateExam(request: ExamRequest): Promise<ExamResponse> {
     console.log("Generating exam for:", request);
 
-    // Step 1: Query Teacher Bank (from Firebase)
-    const bankQuestions = await this.queryTeacherBank(request);
+    // Step 1: Query Teacher Bank
+    const bankQuestions = this.queryTeacherBank(request);
     
     let finalQuestions: ExamQuestion[] = [];
     let source: "teacher_bank" | "ai_generated" | "mixed" = "teacher_bank";
@@ -87,19 +132,17 @@ class ExamService {
     };
   }
 
-  private async queryTeacherBank(request: ExamRequest): Promise<ProcessedQuestion[]> {
-    // Query Firebase
-    // Note: This is a simplified query. In a real app, we might want more complex filtering.
-    // We fetch questions that match the requested difficulty or topic.
-    // Since Firestore query capabilities are limited without composite indexes, 
-    // we might fetch by topic and filter in memory, or fetch by difficulty.
-    
-    // For now, let's try to fetch by topic if available, otherwise fetch all (limited)
-    const topic = (request.subTopics && request.subTopics.length > 0) ? request.subTopics[0] : null;
-    
-    const questions = await firebaseService.getQuestions(topic, request.difficultyLevel, 50);
-    
-    return questions;
+  private queryTeacherBank(request: ExamRequest): ProcessedQuestion[] {
+    // Mock filtering logic
+    return MOCK_TEACHER_BANK.filter(q => {
+      // Filter by subtopic if provided
+      if (request.subTopics && request.subTopics.length > 0) {
+        if (!request.subTopics.includes(q.sub_topic as VietProblemType)) return false;
+      }
+      // Filter by difficulty (loose match for now)
+      // In real app, we might want a range
+      return true; 
+    });
   }
 
   private async generateAiQuestions(count: number, difficulty: DifficultyLevel): Promise<ExamQuestion[]> {
@@ -126,7 +169,8 @@ class ExamService {
     `;
 
     try {
-      const response = await this.genAI.models.generateContent({
+      const ai = this.getGenAI();
+      const response = await ai.models.generateContent({
         model: this.modelId,
         contents: prompt,
         config: {
