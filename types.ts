@@ -185,6 +185,19 @@ export interface ClassAnalytics {
   commonPitfalls: string[];
 }
 
+export interface Exam {
+  id: string;
+  title: string;
+  description: string;
+  file_url: string;
+  storage_path: string;
+  uploaded_by: string; // teacher_id
+  uploaded_at: number; // timestamp
+  subject: "Hệ thức Vi-ét lớp 9";
+  number_of_questions: number;
+  status: "active" | "archived";
+}
+
 // --- EXAM TYPES ---
 export interface ExamRequest {
   topic: "VIET";

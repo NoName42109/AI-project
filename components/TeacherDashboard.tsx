@@ -2,16 +2,15 @@ import React, { useState } from 'react';
 import UploadArea from './UploadArea';
 import ProcessingResultView from './ProcessingResultView';
 import TeacherAnalytics from './TeacherAnalytics';
+import ExamRepository from './Teacher/ExamRepository';
 import { ProcessedQuestion, ProcessingStatus, VietProblemType } from '../types';
 import { pipelineOrchestrator } from '../services/pipelineOrchestrator';
-import { firebaseService } from '../services/firebaseService';
 
 const TeacherDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'UPLOAD' | 'ANALYTICS'>('UPLOAD');
+  const [activeTab, setActiveTab] = useState<'UPLOAD' | 'ANALYTICS' | 'EXAM_REPO'>('UPLOAD');
   const [status, setStatus] = useState<ProcessingStatus>({ step: 'IDLE', message: '', progress: 0 });
   const [questions, setQuestions] = useState<ProcessedQuestion[]>([]);
   const [fileName, setFileName] = useState<string>("");
-  const [isPublishing, setIsPublishing] = useState(false);
 
   const handleFileSelect = async (file: File) => {
     setFileName(file.name);
@@ -29,35 +28,9 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
-  const handlePublish = async () => {
-    const validQuestions = questions.filter(q => q.is_valid_viet);
-    if (validQuestions.length === 0) {
-      alert("Không có câu hỏi hợp lệ để lưu.");
-      return;
-    }
-
-    if (!window.confirm(`Bạn có chắc muốn lưu ${validQuestions.length} câu hỏi vào kho dữ liệu?`)) {
-      return;
-    }
-
-    setIsPublishing(true);
-    try {
-      const questionsToSave = validQuestions.map(q => ({
-        ...q,
-        status: 'PUBLISHED' as const
-      }));
-      await firebaseService.saveQuestions(questionsToSave);
-      alert(`Đã lưu thành công ${validQuestions.length} câu hỏi!`);
-      // Reset state after successful save
-      setQuestions([]);
-      setStatus({ step: 'IDLE', message: '', progress: 0 });
-      setFileName("");
-    } catch (error) {
-      console.error("Error saving to Firebase:", error);
-      alert("Có lỗi xảy ra khi lưu dữ liệu. Vui lòng thử lại.");
-    } finally {
-      setIsPublishing(false);
-    }
+  const handlePublish = () => {
+    const validCount = questions.filter(q => q.is_valid_viet).length;
+    alert(`Đã lưu ${validCount} câu hỏi Vi-ét vào kho dữ liệu (kèm hình ảnh gốc).`);
   };
 
   return (
@@ -74,7 +47,7 @@ const TeacherDashboard: React.FC = () => {
               Teacher Admin
             </h1>
             <p className="text-xs text-neutral-500 mt-1">
-              {activeTab === 'UPLOAD' ? (fileName ? `File: ${fileName}` : 'Chưa chọn file') : 'Báo cáo lớp học'}
+              {activeTab === 'UPLOAD' ? (fileName ? `File: ${fileName}` : 'Chưa chọn file') : activeTab === 'EXAM_REPO' ? 'Quản lý Kho Đề Thi' : 'Báo cáo lớp học'}
             </p>
           </div>
         </div>
@@ -86,6 +59,12 @@ const TeacherDashboard: React.FC = () => {
              className={`flex-1 md:flex-none px-4 py-1.5 text-sm font-semibold rounded-lg transition-all ${activeTab === 'UPLOAD' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'}`}
            >
              Scan & Phân loại
+           </button>
+           <button 
+             onClick={() => setActiveTab('EXAM_REPO')}
+             className={`flex-1 md:flex-none px-4 py-1.5 text-sm font-semibold rounded-lg transition-all ${activeTab === 'EXAM_REPO' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'}`}
+           >
+             Kho Đề Thi
            </button>
            <button 
              onClick={() => setActiveTab('ANALYTICS')}
@@ -100,23 +79,10 @@ const TeacherDashboard: React.FC = () => {
            {activeTab === 'UPLOAD' && questions.length > 0 && (
                <button 
                  onClick={handlePublish}
-                 disabled={isPublishing}
-                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all shadow-sm flex items-center gap-2 shrink-0 ${isPublishing ? 'bg-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800 hover:shadow-md'}`}
+                 className="px-4 py-2 text-sm font-medium rounded-lg transition-all shadow-sm flex items-center gap-2 shrink-0 bg-neutral-900 text-white hover:bg-neutral-800 hover:shadow-md"
                >
-                 {isPublishing ? (
-                   <>
-                     <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                     </svg>
-                     Đang lưu...
-                   </>
-                 ) : (
-                   <>
-                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                     Lưu vào Kho
-                   </>
-                 )}
+                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                 Lưu vào Kho
                </button>
            )}
         </div>
@@ -129,6 +95,11 @@ const TeacherDashboard: React.FC = () => {
           {/* VIEW: ANALYTICS */}
           {activeTab === 'ANALYTICS' && (
              <TeacherAnalytics />
+          )}
+
+          {/* VIEW: EXAM REPOSITORY */}
+          {activeTab === 'EXAM_REPO' && (
+             <ExamRepository teacherId="teacher_1" />
           )}
 
           {/* VIEW: UPLOAD & EDIT */}

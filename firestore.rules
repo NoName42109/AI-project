@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is a teacher
+    // In a real app, you might check a custom claim or a user role in a 'users' collection
+    function isTeacher() {
+      return request.auth != null; 
+      // For stricter control: && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'TEACHER';
+    }
+
+    match /exams/{examId} {
+      // Allow reading: Teachers can read all, Students might be restricted (handled in app logic or separate collection)
+      allow read: if isTeacher();
+      
+      // Allow creation: Only teachers can upload
+      allow create: if isTeacher() 
+                    && request.resource.data.uploaded_by == request.auth.uid
+                    && request.resource.data.status == 'active';
+      
+      // Allow update: Only the uploader can update (e.g., archive)
+      allow update: if isTeacher() 
+                    && resource.data.uploaded_by == request.auth.uid;
+                    
+      // Deny delete: Soft delete (archive) preferred
+      allow delete: if false; 
+    }
+  }
+}
