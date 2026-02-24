@@ -184,3 +184,37 @@ export interface ClassAnalytics {
   weakestTopics: string[];
   commonPitfalls: string[];
 }
+
+// --- EXAM TYPES ---
+export interface ExamRequest {
+  topic: "VIET";
+  subTopics?: VietProblemType[];
+  difficultyLevel: DifficultyLevel;
+  questionCount: number;
+  studentId: string;
+}
+
+export interface ExamQuestion {
+  id: string;
+  content: string; // LaTeX formatted content
+  difficulty: DifficultyLevel;
+  type: VietProblemType;
+  isAiGenerated: boolean;
+}
+
+export interface ExamResponse {
+  source: "teacher_bank" | "ai_generated" | "mixed";
+  difficulty_distribution: {
+    EASY: number;
+    MEDIUM: number;
+    HARD: number;
+    EXPERT: number;
+  };
+  latex_exam: string; // The full LaTeX document string
+  questions: ExamQuestion[]; // Structured list for internal use if needed
+  metadata: {
+    number_of_questions: number;
+    difficulty_level: DifficultyLevel;
+    estimated_time_minutes: number;
+  };
+}

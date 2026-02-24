@@ -2,7 +2,7 @@ import React from 'react';
 import { VietProblemType } from '../types';
 
 interface StudentDashboardProps {
-  onNavigate: (view: 'DASHBOARD' | 'PRACTICE') => void;
+  onNavigate: (view: 'DASHBOARD' | 'PRACTICE' | 'EXAM') => void;
 }
 
 // Mock Data for Student Progress
@@ -39,7 +39,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }) => {
     <div className="p-4 md:p-8 max-w-5xl mx-auto animate-fade-in-up font-sans text-neutral-800">
       
       {/* Welcome Header */}
-      <div className="mb-10 flex items-end justify-between">
+      <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-neutral-900 mb-2">
             Chào {MOCK_DATA.studentName}, 👋
@@ -48,7 +48,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }) => {
             Hôm nay là một ngày tuyệt vời để chinh phục Vi-ét!
           </p>
         </div>
-        <div className="flex items-center gap-4 bg-white px-5 py-3 rounded-2xl shadow-card border border-neutral-100">
+        <div className="flex items-center gap-4 bg-white px-5 py-3 rounded-2xl shadow-card border border-neutral-100 w-fit">
           <div className="flex flex-col items-center">
             <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">Chuỗi</span>
             <span className="text-xl font-bold text-orange-500">🔥 {MOCK_DATA.streakDays} ngày</span>
@@ -112,6 +112,25 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigate }) => {
                </div>
             </div>
           </div>
+
+          {/* Exam Challenge Card */}
+          <div 
+            className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-100 p-6 rounded-3xl relative overflow-hidden group cursor-pointer hover:shadow-md transition-all"
+            onClick={() => onNavigate('EXAM')}
+          >
+             <div className="flex items-center justify-between relative z-10">
+               <div>
+                 <h3 className="text-xl font-bold text-orange-900 mb-2">Kiểm tra thử</h3>
+                 <p className="text-orange-800/80 max-w-md text-sm">
+                   Tạo đề kiểm tra ngẫu nhiên hoặc từ ngân hàng đề để đánh giá năng lực thực tế.
+                 </p>
+               </div>
+               <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-orange-500 shadow-sm transform group-hover:rotate-12 transition-transform">
+                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+               </div>
+             </div>
+          </div>
+
         </div>
 
         {/* Right Column: Mastery List */}
