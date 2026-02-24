@@ -63,6 +63,11 @@ export const pipelineOrchestrator = {
       // 1. Analyze
       const analysis = await aiLayer.analyzeBlock(block);
 
+      // Add a small delay to avoid hitting rate limits too quickly
+      if (processedCount < totalBlocks) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       // 2. If Valid, Crop Image
       if (analysis.is_valid_viet && block.pageImageRef) {
          try {

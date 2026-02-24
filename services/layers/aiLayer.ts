@@ -67,75 +67,107 @@ export const aiLayer = {
     }
     `;
 
-    try {
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              is_valid_viet: { type: Type.BOOLEAN },
-              rejection_reason: { type: Type.STRING },
-              sub_topic: { type: Type.STRING },
-              detected_equation: { type: Type.STRING },
-              cleaned_content: { type: Type.STRING },
-              difficulty_score: { type: Type.NUMBER },
-            },
-            required: ["is_valid_viet", "sub_topic", "cleaned_content"]
+    let retries = 3;
+    let delay = 2000; // 2 seconds initial delay
+
+    while (retries > 0) {
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                is_valid_viet: { type: Type.BOOLEAN },
+                rejection_reason: { type: Type.STRING },
+                sub_topic: { type: Type.STRING },
+                detected_equation: { type: Type.STRING },
+                cleaned_content: { type: Type.STRING },
+                difficulty_score: { type: Type.NUMBER },
+              },
+              required: ["is_valid_viet", "sub_topic", "cleaned_content"]
+            }
           }
+        });
+
+        if (!response.text) throw new Error("AI Empty Response");
+        const result = JSON.parse(response.text);
+
+        // Map to System Type
+        const processed: ProcessedQuestion = {
+          id: block.id,
+          raw_text: block.text,
+          cleaned_content: result.cleaned_content || block.text,
+          detected_equation: result.detected_equation,
+          sub_topic: result.sub_topic,
+          difficulty_score: result.difficulty_score || 0.5,
+          difficulty_level: result.difficulty_score < 0.4 ? 'EASY' : result.difficulty_score < 0.7 ? 'MEDIUM' : 'HARD',
+          
+          has_parameter: (result.cleaned_content || "").includes('m') || (result.detected_equation || "").includes('m'),
+          is_multi_step: result.difficulty_score > 0.6,
+          estimated_time_seconds: 300,
+          
+          is_valid_viet: result.is_valid_viet,
+          rejection_reason: result.is_valid_viet ? undefined : result.rejection_reason,
+          
+          status: 'DRAFT',
+          created_at: Date.now(),
+          source_file: "upload",
+          page_number: block.pageIndex
+        };
+
+        return processed;
+
+      } catch (error: any) {
+        const errorMsg = error?.message || String(error);
+        if (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+          console.warn(`[AI Block Analysis] Rate limited. Retrying in ${delay}ms... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          retries--;
+          delay *= 2; // Exponential backoff
+        } else {
+          console.error(`[AI Block Analysis] Error:`, error);
+          // Fail safe return
+          return {
+            id: block.id,
+            raw_text: block.text,
+            cleaned_content: block.text,
+            detected_equation: null,
+            sub_topic: VietProblemType.INVALID,
+            difficulty_score: 0,
+            difficulty_level: 'EASY',
+            has_parameter: false,
+            is_multi_step: false,
+            estimated_time_seconds: 0,
+            is_valid_viet: false,
+            rejection_reason: `Lỗi AI: ${errorMsg}`,
+            status: 'DRAFT',
+            created_at: Date.now(),
+            source_file: "upload"
+          };
         }
-      });
-
-      if (!response.text) throw new Error("AI Empty Response");
-      const result = JSON.parse(response.text);
-
-      // Map to System Type
-      const processed: ProcessedQuestion = {
-        id: block.id,
-        raw_text: block.text,
-        cleaned_content: result.cleaned_content || block.text,
-        detected_equation: result.detected_equation,
-        sub_topic: result.sub_topic,
-        difficulty_score: result.difficulty_score || 0.5,
-        difficulty_level: result.difficulty_score < 0.4 ? 'EASY' : result.difficulty_score < 0.7 ? 'MEDIUM' : 'HARD',
-        
-        has_parameter: (result.cleaned_content || "").includes('m') || (result.detected_equation || "").includes('m'),
-        is_multi_step: result.difficulty_score > 0.6,
-        estimated_time_seconds: 300,
-        
-        is_valid_viet: result.is_valid_viet,
-        rejection_reason: result.is_valid_viet ? undefined : result.rejection_reason,
-        
-        status: 'DRAFT',
-        created_at: Date.now(),
-        source_file: "upload",
-        page_number: block.pageIndex
-      };
-
-      return processed;
-
-    } catch (error: any) {
-      console.error(`[AI Block Analysis] Error:`, error);
-      // Fail safe return
-      return {
-        id: block.id,
-        raw_text: block.text,
-        cleaned_content: block.text,
-        detected_equation: null,
-        sub_topic: VietProblemType.INVALID,
-        difficulty_score: 0,
-        difficulty_level: 'EASY',
-        has_parameter: false,
-        is_multi_step: false,
-        estimated_time_seconds: 0,
-        is_valid_viet: false,
-        rejection_reason: `Lỗi AI: ${error?.message || String(error)}`,
-        status: 'DRAFT',
-        created_at: Date.now(),
-        source_file: "upload"
-      };
+      }
     }
+
+    // If we exhausted all retries
+    return {
+      id: block.id,
+      raw_text: block.text,
+      cleaned_content: block.text,
+      detected_equation: null,
+      sub_topic: VietProblemType.INVALID,
+      difficulty_score: 0,
+      difficulty_level: 'EASY',
+      has_parameter: false,
+      is_multi_step: false,
+      estimated_time_seconds: 0,
+      is_valid_viet: false,
+      rejection_reason: `Lỗi AI: Quá tải hệ thống (Rate Limit)`,
+      status: 'DRAFT',
+      created_at: Date.now(),
+      source_file: "upload"
+    };
   }
 };
