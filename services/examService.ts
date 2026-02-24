@@ -46,7 +46,7 @@ const MOCK_TEACHER_BANK: ProcessedQuestion[] = [
 
 class ExamService {
   private genAI: GoogleGenAI | null = null;
-  private modelId: string = "gemini-2.5-flash-latest";
+  private modelId: string = "gemini-3-flash-preview";
 
   constructor() {
     // Lazy initialization

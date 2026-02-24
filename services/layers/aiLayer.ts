@@ -14,7 +14,7 @@ export const aiLayer = {
     if (!apiKey) throw new Error("API Key missing");
 
     const ai = new GoogleGenAI({ apiKey });
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
 
     const prompt = `
     ROLE: Bạn là chuyên gia thẩm định đề thi Toán lớp 9.

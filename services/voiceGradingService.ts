@@ -2,15 +2,23 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { VoiceSubmissionResult } from "../types";
 
 class VoiceGradingService {
-  private genAI: GoogleGenAI;
-  private modelId: string = "gemini-2.5-flash-latest"; // Using the latest Flash model for speed and multimodal capabilities
+  private genAI: GoogleGenAI | null = null;
+  private modelId: string = "gemini-2.5-flash-native-audio-preview-12-2025"; // Using the latest Flash model for speed and multimodal capabilities
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY || "";
-    if (!apiKey) {
-      console.warn("Gemini API Key is missing!");
+    // Lazy init
+  }
+
+  private getGenAI(): GoogleGenAI {
+    if (!this.genAI) {
+      const apiKey = process.env.GEMINI_API_KEY || "";
+      if (!apiKey) {
+        console.warn("Gemini API Key is missing!");
+        throw new Error("Gemini API Key is missing. Please check your environment variables.");
+      }
+      this.genAI = new GoogleGenAI({ apiKey });
     }
-    this.genAI = new GoogleGenAI({ apiKey });
+    return this.genAI;
   }
 
   /**
@@ -35,6 +43,7 @@ class VoiceGradingService {
    */
   async processAudioSubmission(audioBlob: Blob): Promise<VoiceSubmissionResult> {
     try {
+      const ai = this.getGenAI();
       const base64Audio = await this.blobToBase64(audioBlob);
       
       // Define the schema for the structured output
@@ -114,7 +123,7 @@ class VoiceGradingService {
         - Nếu nội dung không liên quan, hãy trả về thông báo lỗi trong phần feedback.
       `;
 
-      const response = await this.genAI.models.generateContent({
+      const response = await ai.models.generateContent({
         model: this.modelId,
         contents: {
           parts: [

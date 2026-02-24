@@ -9,8 +9,8 @@ const processRawTextWithGemini = async (rawText: string, fileName: string): Prom
 
   const ai = new GoogleGenAI({ apiKey });
 
-  // Use gemini-3-pro-preview for deep reasoning capabilities
-  const modelId = "gemini-3-pro-preview";
+  // Use gemini-3.1-pro-preview for deep reasoning capabilities
+  const modelId = "gemini-3.1-pro-preview";
 
   const prompt = `
     Bạn là một chuyên gia AI về toán học, chuyên sâu về chuyên đề "Hệ thức Vi-ét" (Vieta's Formulas) trong chương trình Toán lớp 9 Việt Nam.

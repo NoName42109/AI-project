@@ -18,7 +18,7 @@ export const gradingEngine = {
     if (!apiKey) throw new Error("API Key missing");
 
     const ai = new GoogleGenAI({ apiKey });
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
 
     // Skip AI if empty
     if (!studentSolution || studentSolution.trim().length < 2) {
