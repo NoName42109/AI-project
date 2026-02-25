@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { mathOcrService, MathOcrResult } from '../services/mathOcrService';
+import { mathOcrService, MathOcrResult, MathRegion } from '../services/mathOcrService';
+import { datasetService } from '../services/datasetService';
 
 export const MathOcrScanner: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [result, setResult] = useState<MathOcrResult | null>(null);
+
+  // Active Learning State
+  const [editingRegionIndex, setEditingRegionIndex] = useState<number | null>(null);
+  const [editedLatex, setEditedLatex] = useState<string>('');
+  const [saveStatus, setSaveStatus] = useState<string>('');
 
   const handleScan = async () => {
     if (!file) {
@@ -16,6 +22,7 @@ export const MathOcrScanner: React.FC = () => {
     setLoading(true);
     setError('');
     setResult(null);
+    setSaveStatus('');
 
     try {
       const scanData = await mathOcrService.scanDocument(file);
@@ -24,6 +31,42 @@ export const MathOcrScanner: React.FC = () => {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startEditing = (index: number, currentLatex: string) => {
+    setEditingRegionIndex(index);
+    setEditedLatex(currentLatex);
+    setSaveStatus('');
+  };
+
+  const handleSaveCorrection = async (region: MathRegion) => {
+    if (!editedLatex.trim() || editedLatex === region.latex) {
+      setEditingRegionIndex(null);
+      return;
+    }
+
+    try {
+      // Lưu vào Firestore (Active Learning Loop)
+      await datasetService.saveHardCase({
+        original_latex: region.latex,
+        corrected_latex: editedLatex,
+        confidence: region.confidence,
+        math_type: 'unknown', // Có thể thêm dropdown để giáo viên chọn loại toán
+        source: 'teacher_correction'
+      });
+
+      // Cập nhật UI
+      if (result) {
+        const updatedRegions = [...result.math_regions];
+        updatedRegions[editingRegionIndex!] = { ...region, latex: editedLatex };
+        setResult({ ...result, math_regions: updatedRegions });
+      }
+      
+      setSaveStatus('Đã lưu vào Dataset huấn luyện!');
+      setEditingRegionIndex(null);
+    } catch (err) {
+      setSaveStatus('Lỗi khi lưu dữ liệu.');
     }
   };
 
@@ -74,14 +117,56 @@ export const MathOcrScanner: React.FC = () => {
 
             {result.math_regions.length > 0 && (
               <div className="p-4 bg-neutral-50 border rounded-lg">
-                <h4 className="font-bold text-sm text-neutral-700 mb-2">Math Regions Detected:</h4>
-                <ul className="space-y-2">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-bold text-sm text-neutral-700">Math Regions Detected:</h4>
+                  {saveStatus && <span className="text-xs text-green-600 font-medium">{saveStatus}</span>}
+                </div>
+                
+                <ul className="space-y-3">
                   {result.math_regions.map((region, idx) => (
-                    <li key={idx} className="font-mono text-xs flex justify-between items-center bg-white p-2 border rounded">
-                      <span className="truncate mr-4">{region.latex}</span>
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold ${region.confidence < 0.9 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                        {Math.round(region.confidence * 100)}%
-                      </span>
+                    <li key={idx} className="bg-white p-3 border rounded shadow-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${region.confidence < 0.9 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                          Confidence: {Math.round(region.confidence * 100)}%
+                        </span>
+                        {editingRegionIndex !== idx && (
+                          <button 
+                            onClick={() => startEditing(idx, region.latex)}
+                            className="text-xs text-primary-600 hover:text-primary-800 underline"
+                          >
+                            Sửa lỗi (Train Model)
+                          </button>
+                        )}
+                      </div>
+
+                      {editingRegionIndex === idx ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea 
+                            value={editedLatex}
+                            onChange={(e) => setEditedLatex(e.target.value)}
+                            className="w-full font-mono text-xs p-2 border border-primary-300 rounded bg-primary-50 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            rows={3}
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button 
+                              onClick={() => setEditingRegionIndex(null)}
+                              className="text-xs px-3 py-1 text-neutral-600 hover:bg-neutral-100 rounded"
+                            >
+                              Hủy
+                            </button>
+                            <button 
+                              onClick={() => handleSaveCorrection(region)}
+                              className="text-xs px-3 py-1 bg-primary-600 text-white rounded hover:bg-primary-700"
+                            >
+                              Lưu vào Dataset
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="font-mono text-xs overflow-x-auto pb-1">
+                          {region.latex}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
