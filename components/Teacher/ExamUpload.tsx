@@ -31,27 +31,42 @@ const ExamUpload: React.FC<ExamUploadProps> = ({ teacherId, onUploadSuccess }) =
     setError(null);
 
     try {
-      const examData: Omit<Exam, "id" | "file_url" | "storage_path" | "uploaded_at"> = {
-        title,
-        description,
-        uploaded_by: teacherId,
-        subject: "Hệ thức Vi-ét lớp 9",
-        number_of_questions: 10, // Default for now, could be parsed
-        status: "active"
-      };
-
-      await examStore.uploadExam(file, examData);
+      // Convert file to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
       
-      // Reset form
-      setFile(null);
-      setTitle('');
-      setDescription('');
-      onUploadSuccess();
+      reader.onload = async () => {
+        const base64String = reader.result as string;
+        
+        const examData: Omit<Exam, "id" | "file_url" | "storage_path" | "uploaded_at"> = {
+          title,
+          description,
+          uploaded_by: teacherId,
+          subject: "Hệ thức Vi-ét lớp 9",
+          number_of_questions: 10, // Default for now, could be parsed
+          status: "active"
+        };
+
+        // We'll pass the base64 string directly to a modified upload function
+        await examStore.uploadExamBase64(file.name, base64String, examData);
+        
+        // Reset form
+        setFile(null);
+        setTitle('');
+        setDescription('');
+        onUploadSuccess();
+        setIsUploading(false);
+      };
+      
+      reader.onerror = (error) => {
+        console.error("Error reading file:", error);
+        setError("Lỗi đọc file. Vui lòng thử lại.");
+        setIsUploading(false);
+      };
       
     } catch (err) {
       console.error("Upload failed:", err);
       setError("Có lỗi xảy ra khi upload. Vui lòng thử lại.");
-    } finally {
       setIsUploading(false);
     }
   };

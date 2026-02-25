@@ -127,15 +127,26 @@ const ExamRepository: React.FC<ExamRepositoryProps> = ({ teacherId }) => {
               </div>
               
               <div className="bg-neutral-50 px-5 py-3 border-t border-neutral-100 flex justify-between items-center">
-                <a 
-                  href={exam.file_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  Tải xuống
-                </a>
+                {exam.file_url.startsWith('data:') ? (
+                  <a 
+                    href={exam.file_url} 
+                    download={`${exam.title}.pdf`}
+                    className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Tải xuống
+                  </a>
+                ) : (
+                  <a 
+                    href={exam.file_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Tải xuống
+                  </a>
+                )}
                 <button className="text-neutral-400 hover:text-neutral-600">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
                 </button>

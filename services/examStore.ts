@@ -83,6 +83,39 @@ export const examStore = {
   },
 
   /**
+   * Uploads an exam file as a base64 string directly to Firestore.
+   */
+  uploadExamBase64: async (
+    fileName: string,
+    base64String: string,
+    metadata: Omit<Exam, "id" | "file_url" | "storage_path" | "uploaded_at">
+  ): Promise<string> => {
+    if (!isFirebaseInitialized) {
+      console.warn("Firebase not initialized. Using mock upload.");
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return "mock_id_" + Date.now();
+    }
+
+    try {
+      const timestamp = Date.now();
+      
+      const examData: Omit<Exam, "id"> = {
+        ...metadata,
+        file_url: base64String, // Store base64 directly in file_url
+        storage_path: "firestore_base64", // Indicate it's stored in Firestore
+        uploaded_at: timestamp,
+      };
+
+      const docRef = await addDoc(collection(db, EXAMS_COLLECTION), examData);
+      return docRef.id;
+
+    } catch (error) {
+      console.error("Error uploading exam (base64):", error);
+      throw error;
+    }
+  },
+
+  /**
    * Fetches a paginated list of exams, ordered by upload date (newest first).
    */
   getExams: async (

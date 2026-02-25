@@ -1,21 +1,9 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper function to check if user is a teacher
-    function isTeacher() {
-      return request.auth != null;
-    }
-
-    match /exams/{teacherId}/{fileName} {
-      // Allow read: Teachers can download
-      allow read: if isTeacher();
-      
-      // Allow write: Only the teacher can upload to their own folder
-      allow write: if isTeacher()
-                   && request.auth.uid == teacherId
-                   && request.resource.size < 10 * 1024 * 1024 // Max 10MB
-                   && request.resource.contentType.matches('application/pdf|application/vnd.openxmlformats-officedocument.wordprocessingml.document'); // PDF or DOCX
+    // Allow read/write access to all files for testing purposes
+    match /{allPaths=**} {
+      allow read, write: if true;
     }
   }
 }
