@@ -1,8 +1,10 @@
 import React, { ReactNode } from 'react';
 import { useMobile } from '../hooks/useMobile';
+import { GlobalApiWarning } from '../components/GlobalApiWarning';
 
 type ViewMode = 'TEACHER' | 'STUDENT';
 type StudentView = 'DASHBOARD' | 'PRACTICE';
+type TeacherView = 'UPLOAD' | 'BANK' | 'API_MANAGEMENT';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -10,6 +12,8 @@ interface AppLayoutProps {
   setViewMode: (mode: ViewMode) => void;
   studentView: StudentView;
   setStudentView: (view: StudentView) => void;
+  teacherView?: TeacherView;
+  setTeacherView?: (view: TeacherView) => void;
 }
 
 const AppLayout: React.FC<AppLayoutProps> = ({ 
@@ -17,7 +21,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({
   viewMode, 
   setViewMode, 
   studentView, 
-  setStudentView 
+  setStudentView,
+  teacherView,
+  setTeacherView
 }) => {
   const isMobile = useMobile();
 
@@ -100,13 +106,26 @@ const AppLayout: React.FC<AppLayoutProps> = ({
             ) : (
               <>
                 <div className="px-4 py-2 text-xs font-bold text-neutral-400 uppercase tracking-wider">Quản lý</div>
-                <button className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium bg-neutral-800 text-white flex items-center gap-3 shadow-md">
+                <button 
+                  onClick={() => setTeacherView?.('UPLOAD')}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'UPLOAD' || !teacherView ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                   Upload & Xử lý
                 </button>
-                <button className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 flex items-center gap-3">
+                <button 
+                  onClick={() => setTeacherView?.('BANK')}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'BANK' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                >
                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                    Kho câu hỏi
+                </button>
+                <button 
+                  onClick={() => setTeacherView?.('API_MANAGEMENT')}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'API_MANAGEMENT' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                >
+                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                   Quản lý API
                 </button>
               </>
             )}
@@ -129,6 +148,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative flex flex-col h-full">
+        {viewMode === 'TEACHER' && <GlobalApiWarning />}
         {/* Mobile Header */}
         {!isPracticeMode && (
           <div className="md:hidden h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-4 sticky top-0 z-20">

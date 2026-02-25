@@ -1,3 +1,5 @@
+import { withLlamaKeyRotation } from './utils/envKeyManager';
+
 export const config = {
   runtime: 'edge',
 };
@@ -39,11 +41,6 @@ export default async function handler(req: Request) {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
-  const apiKey = process.env.LLAMA_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Missing LLAMA_API_KEY in environment variables' }), { status: 500 });
-  }
-
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -52,88 +49,93 @@ export default async function handler(req: Request) {
       return new Response(JSON.stringify({ error: 'No file provided' }), { status: 400 });
     }
 
-    // --- PASS 1: GỌI LLAMA CLOUD (VISION ENCODER) ---
-    const uploadData = new FormData();
-    uploadData.append('file', file);
-    uploadData.append('premium_mode', 'true'); // Kích hoạt model Vision chất lượng cao
-    
-    const instruction = `
-      Bạn là Mathpix OCR Engine chuyên nghiệp. Nhiệm vụ của bạn là nhận diện văn bản và công thức toán học từ ảnh/tài liệu.
-      CHÚ Ý ĐẶC BIỆT (Hệ thức Vi-ét lớp 9):
-      - Phân số lồng nhau: Phải dùng \\frac{a}{b}.
-      - Hệ phương trình: BẮT BUỘC dùng \\begin{cases} ... \\end{cases}.
-      - Ký hiệu đặc biệt: Delta là \\Delta, Mọi là \\forall, Tồn tại là \\exists.
-      - Tham số m: Phân biệt rõ chữ 'm' (tham số) và 'm' (mét). Trong ngữ cảnh phương trình, nó là tham số $m$.
-      - Nghiệm: x1, x2 phải viết là x_1, x_2.
+    // --- SỬ DỤNG AUTO ROTATION WRAPPER ---
+    const resultJson = await withLlamaKeyRotation(async (apiKey) => {
+      // --- PASS 1: GỌI LLAMA CLOUD (VISION ENCODER) ---
+      const uploadData = new FormData();
+      uploadData.append('file', file);
+      uploadData.append('premium_mode', 'true'); // Kích hoạt model Vision chất lượng cao
       
-      TRẢ VỀ DUY NHẤT JSON THEO FORMAT SAU (Không kèm markdown code block, chỉ trả về JSON hợp lệ):
-      {
-        "raw_text": "Toàn bộ text thô không chứa mã LaTeX",
-        "math_regions": [
-          {
-            "latex": "công thức 1",
-            "confidence": 0.98
-          }
-        ],
-        "full_latex_document": "Toàn bộ tài liệu, trong đó công thức toán được bọc trong dấu $...$ hoặc $$...$$"
-      }
-    `;
-    
-    uploadData.append('parsing_instruction', instruction);
-
-    const uploadRes = await fetch(`${LLAMA_API_URL}/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: uploadData
-    });
-
-    if (!uploadRes.ok) {
-      if (uploadRes.status === 401) throw new Error('401: Llama API Key không hợp lệ');
-      if (uploadRes.status === 413) throw new Error('413: File quá lớn');
-      throw new Error(`Upload failed: ${uploadRes.statusText}`);
-    }
-
-    const { id: jobId } = await uploadRes.json();
-
-    // --- POLLING LẤY KẾT QUẢ ---
-    let resultJson: any = null;
-    const maxAttempts = 15; // Timeout khoảng 60s
-    
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(r => setTimeout(r, 4000));
+      const instruction = `
+        Bạn là Mathpix OCR Engine chuyên nghiệp. Nhiệm vụ của bạn là nhận diện văn bản và công thức toán học từ ảnh/tài liệu.
+        CHÚ Ý ĐẶC BIỆT (Hệ thức Vi-ét lớp 9):
+        - Phân số lồng nhau: Phải dùng \\frac{a}{b}.
+        - Hệ phương trình: BẮT BUỘC dùng \\begin{cases} ... \\end{cases}.
+        - Ký hiệu đặc biệt: Delta là \\Delta, Mọi là \\forall, Tồn tại là \\exists.
+        - Tham số m: Phân biệt rõ chữ 'm' (tham số) và 'm' (mét). Trong ngữ cảnh phương trình, nó là tham số $m$.
+        - Nghiệm: x1, x2 phải viết là x_1, x_2.
+        
+        TRẢ VỀ DUY NHẤT JSON THEO FORMAT SAU (Không kèm markdown code block, chỉ trả về JSON hợp lệ):
+        {
+          "raw_text": "Toàn bộ text thô không chứa mã LaTeX",
+          "math_regions": [
+            {
+              "latex": "công thức 1",
+              "confidence": 0.98
+            }
+          ],
+          "full_latex_document": "Toàn bộ tài liệu, trong đó công thức toán được bọc trong dấu $...$ hoặc $$...$$"
+        }
+      `;
       
-      const statusRes = await fetch(`${LLAMA_API_URL}/job/${jobId}`, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
+      uploadData.append('parsing_instruction', instruction);
+
+      const uploadRes = await fetch(`${LLAMA_API_URL}/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: uploadData
       });
-      const statusData = await statusRes.json();
 
-      if (statusData.status === 'SUCCESS') {
-        const resultRes = await fetch(`${LLAMA_API_URL}/job/${jobId}/result/markdown`, {
+      if (!uploadRes.ok) {
+        const error: any = new Error(`Upload failed: ${uploadRes.statusText}`);
+        error.status = uploadRes.status; // Gắn status để wrapper biết đường rotate
+        throw error;
+      }
+
+      const { id: jobId } = await uploadRes.json();
+
+      // --- POLLING LẤY KẾT QUẢ ---
+      let parsedJson: any = null;
+      const maxAttempts = 15; // Timeout khoảng 60s
+      
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 4000));
+        
+        const statusRes = await fetch(`${LLAMA_API_URL}/job/${jobId}`, {
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
-        const resultData = await resultRes.json();
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'SUCCESS') {
+          const resultRes = await fetch(`${LLAMA_API_URL}/job/${jobId}/result/markdown`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          const resultData = await resultRes.json();
+          
+          const fullText = resultData.markdown || "";
+          const jsonMatch = fullText.match(/```json\n([\s\S]*?)\n```/) || fullText.match(/\{[\s\S]*\}/);
+          const cleanJsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : fullText;
+          
+          try {
+            parsedJson = JSON.parse(cleanJsonStr.trim());
+            break;
+          } catch (e) {
+            console.error("Failed to parse JSON from LlamaParse:", cleanJsonStr);
+            throw new Error("Llama Cloud trả về dữ liệu không đúng định dạng JSON");
+          }
+        }
         
-        const fullText = resultData.markdown || "";
-        const jsonMatch = fullText.match(/```json\n([\s\S]*?)\n```/) || fullText.match(/\{[\s\S]*\}/);
-        const cleanJsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : fullText;
-        
-        try {
-          resultJson = JSON.parse(cleanJsonStr.trim());
-          break;
-        } catch (e) {
-          console.error("Failed to parse JSON from LlamaParse:", cleanJsonStr);
-          throw new Error("Llama Cloud trả về dữ liệu không đúng định dạng JSON");
+        if (statusData.status === 'ERROR') {
+          throw new Error('500: Llama Cloud xử lý thất bại');
         }
       }
-      
-      if (statusData.status === 'ERROR') {
-        throw new Error('500: Llama Cloud xử lý thất bại');
-      }
-    }
 
-    if (!resultJson) {
-      throw new Error('Timeout: Llama Cloud xử lý quá lâu');
-    }
+      if (!parsedJson) {
+        throw new Error('Timeout: Llama Cloud xử lý quá lâu');
+      }
+
+      return parsedJson;
+    });
 
     // --- POST-PROCESSING & VALIDATION LAYER ---
     let syntaxValid = true;
