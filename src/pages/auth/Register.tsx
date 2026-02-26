@@ -19,6 +19,9 @@ export const Register: React.FC = () => {
     setError('');
     setLoading(true);
 
+    // Prevent frontend manipulation to register as admin
+    const finalRole = role === 'admin' ? 'student' : role;
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
@@ -27,12 +30,11 @@ export const Register: React.FC = () => {
         uid: userCredential.user.uid,
         name,
         email,
-        role,
+        role: finalRole,
         createdAt: new Date().toISOString()
       });
 
-      if (role === 'admin') navigate('/admin/dashboard');
-      else if (role === 'teacher') navigate('/teacher/dashboard');
+      if (finalRole === 'teacher') navigate('/teacher/dashboard');
       else navigate('/student/dashboard');
       
     } catch (err: any) {
@@ -101,7 +103,6 @@ export const Register: React.FC = () => {
             >
               <option value="student">Học sinh</option>
               <option value="teacher">Giáo viên</option>
-              <option value="admin">Quản trị viên</option>
             </select>
           </div>
 

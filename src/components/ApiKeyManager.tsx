@@ -8,6 +8,7 @@ interface ApiKeyRecord {
   status: 'active' | 'standby' | 'low_quota' | 'disabled';
   usageCount: number;
   lastUsed: number;
+  isNew?: boolean;
 }
 
 export const ApiKeyManager: React.FC = () => {
@@ -93,31 +94,36 @@ export const ApiKeyManager: React.FC = () => {
             {keys.length === 0 && !loading ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-neutral-500">
-                  Chưa có API Key nào trong hệ thống. Vui lòng thêm key vào Firestore collection `api_keys`.
+                  Chưa có API Key nào trong hệ thống. Vui lòng cấu hình LLAMA_API_KEYS trong Vercel.
                 </td>
               </tr>
             ) : (
-              keys.map((key) => (
-                <tr key={key.id} className="border-b hover:bg-neutral-50">
-                  <td className="px-4 py-3 font-medium text-neutral-900">{key.service}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{key.maskedKey}</td>
-                  <td className="px-4 py-3">{getStatusBadge(key.status)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-full bg-neutral-200 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full ${getProgressBarColor(key.quotaRemainingPercent, key.status)}`} 
-                          style={{ width: `${Math.max(0, key.quotaRemainingPercent)}%` }}
-                        ></div>
+              keys.map((key) => {
+                const isUnused = key.usageCount === 0 || key.isNew;
+                const displayPercent = isUnused ? 100 : key.quotaRemainingPercent;
+                
+                return (
+                  <tr key={key.id} className="border-b hover:bg-neutral-50">
+                    <td className="px-4 py-3 font-medium text-neutral-900">{key.service}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{key.maskedKey}</td>
+                    <td className="px-4 py-3">{getStatusBadge(isUnused ? 'active' : key.status)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-full bg-neutral-200 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full ${getProgressBarColor(displayPercent, isUnused ? 'active' : key.status)}`} 
+                            style={{ width: `${Math.max(0, displayPercent)}%` }}
+                          ></div>
+                        </div>
+                        <span className={`text-xs font-bold whitespace-nowrap ${displayPercent < 20 ? 'text-red-600' : 'text-neutral-700'}`}>
+                          {isUnused ? '100% (chưa sử dụng)' : `${displayPercent.toFixed(0)}%`}
+                        </span>
                       </div>
-                      <span className={`text-xs font-bold w-8 text-right ${key.quotaRemainingPercent < 20 ? 'text-red-600' : 'text-neutral-700'}`}>
-                        {key.quotaRemainingPercent.toFixed(0)}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono">{key.usageCount || 0}</td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">{key.usageCount || 0}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

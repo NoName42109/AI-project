@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import { apiKeyManager } from "./src/services/apiKeyManager";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -8,80 +9,71 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Helper cho Auto Rotation
-let currentLlamaIndex = 0;
-async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
-  const keysStr = process.env.LLAMA_API_KEYS || process.env.LLAMA_API_KEY || '';
-  const keys = keysStr.split(',').map(k => k.trim()).filter(k => k.length > 0);
-
-  if (keys.length === 0) {
-    throw new Error('Chưa cấu hình LLAMA_API_KEYS trong Vercel Environment Variables.');
+async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<{ result: T, headers?: Headers }>): Promise<T> {
+  const activeKeyInfo = await apiKeyManager.getActiveKey();
+  
+  if (!activeKeyInfo) {
+    throw new Error('Tất cả API keys đều đã hết Quota hoặc chưa được cấu hình.');
   }
 
-  let attempts = 0;
-  let lastError: any;
-
-  while (attempts < keys.length) {
-    const key = keys[currentLlamaIndex];
-    try {
-      return await action(key);
-    } catch (error: any) {
-      const status = error.status;
-      if (status === 429 || status === 401 || status === 403) {
-        console.warn(`[Auto Rotation] Key index ${currentLlamaIndex} lỗi (${status}). Chuyển sang key tiếp theo...`);
-        currentLlamaIndex = (currentLlamaIndex + 1) % keys.length;
-        attempts++;
-        lastError = error;
-      } else {
-        throw error;
-      }
+  try {
+    const { result, headers } = await action(activeKeyInfo.key);
+    // If successful, update quota
+    if (headers) {
+      await apiKeyManager.updateQuotaFromResponse(activeKeyInfo.docId, headers, true);
+    } else {
+      // If we don't have headers but it succeeded, we just increment usage
+      await apiKeyManager.updateQuotaFromResponse(activeKeyInfo.docId, new Headers(), true);
+    }
+    return result;
+  } catch (error: any) {
+    const status = error.status;
+    if (status === 429 || status === 401 || status === 403 || status === 402) {
+      console.warn(`[Auto Rotation] Key lỗi (${status}). Đánh dấu hết quota...`);
+      await apiKeyManager.markKeyAsExhausted(activeKeyInfo.docId);
+      // Try again recursively with the next available key
+      return withLlamaKeyRotation(action);
+    } else {
+      throw error;
     }
   }
-  throw new Error(`Tất cả ${keys.length} API keys đều đã hết Quota hoặc bị từ chối.`);
 }
 
 // API 1: Lấy danh sách API Keys
 app.get("/api/keys/list", async (req, res) => {
-  const keysStr = process.env.LLAMA_API_KEYS || process.env.LLAMA_API_KEY || '';
-  const keys = keysStr.split(',').map(k => k.trim()).filter(k => k.length > 0);
-
-  if (keys.length === 0) {
-    return res.json([]);
-  }
-
-  const results = await Promise.all(keys.map(async (key, index) => {
-    const maskedKey = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-    try {
-      const fetchRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/usage', {
-        headers: { 'Authorization': `Bearer ${key}` }
-      });
-      
-      if (fetchRes.ok) {
-        const data = await fetchRes.json();
-        const total = data.total_pages_allowed || 1000;
-        const used = data.total_pages_used || 0;
-        const remainingPercent = Math.max(0, ((total - used) / total) * 100);
-        
-        let status = 'active';
-        if (remainingPercent <= 0) status = 'disabled';
-        else if (remainingPercent < 20) status = 'low_quota';
-
-        return {
-          id: `env_key_${index + 1}`,
-          service: 'llamacloud',
-          maskedKey,
-          quotaRemainingPercent: remainingPercent,
-          status,
-          usageCount: used,
-          lastUsed: Date.now()
-        };
-      }
-      return { id: `env_key_${index + 1}`, service: 'llamacloud', maskedKey, status: 'disabled', quotaRemainingPercent: 0, usageCount: 0 };
-    } catch (e) {
-      return { id: `env_key_${index + 1}`, service: 'llamacloud', maskedKey, status: 'error', quotaRemainingPercent: 0, usageCount: 0 };
+  try {
+    const keys = apiKeyManager.loadKeysFromEnv();
+    
+    if (keys.length === 0) {
+      console.warn('[API Keys] LLAMA_API_KEYS is empty in environment variables.');
+      return res.json([]);
     }
-  }));
 
-  res.json(results);
+    // Initialize missing keys in Firestore and get their status
+    const results = await apiKeyManager.initializeMissingKeys();
+    
+    // Format results for the frontend component
+    const formattedResults = results.map((record, index) => {
+      // If a key has 0 usage, we ensure it shows 100% and "active"
+      const isUnused = record.usageCount === 0;
+      
+      return {
+        id: record.id || `env_key_${index + 1}`,
+        service: 'llamacloud',
+        maskedKey: record.maskedKey,
+        quotaRemainingPercent: isUnused ? 100 : record.quotaRemainingPercent,
+        status: isUnused ? 'active' : record.status,
+        usageCount: record.usageCount,
+        lastUsed: record.lastUsed,
+        isNew: isUnused
+      };
+    });
+
+    res.json(formattedResults);
+  } catch (error: any) {
+    console.error('[API Keys] Error processing keys:', error);
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
+  }
 });
 
 // API 2: Math OCR
@@ -145,6 +137,7 @@ app.post("/api/math-ocr", async (req, res) => {
       const { id: jobId } = await uploadRes.json();
 
       let parsedJson: any = null;
+      let finalHeaders: Headers | undefined;
       const maxAttempts = 15;
       
       for (let i = 0; i < maxAttempts; i++) {
@@ -159,6 +152,7 @@ app.post("/api/math-ocr", async (req, res) => {
           const resultRes = await fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`, {
             headers: { 'Authorization': `Bearer ${apiKey}` }
           });
+          finalHeaders = resultRes.headers;
           const resultData = await resultRes.json();
           
           const fullText = resultData.markdown || "";
@@ -182,7 +176,7 @@ app.post("/api/math-ocr", async (req, res) => {
         throw new Error('Timeout: Llama Cloud xử lý quá lâu');
       }
 
-      return parsedJson;
+      return { result: parsedJson, headers: finalHeaders };
     });
 
     // Post-processing

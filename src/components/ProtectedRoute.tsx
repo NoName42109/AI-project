@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth, UserRole } from '../contexts/AuthContext';
+import { LoadingScreen } from './LoadingScreen';
 
 interface ProtectedRouteProps {
   allowedRoles: UserRole[];
@@ -10,11 +11,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   const { user, role, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    );
+    return <LoadingScreen message="Đang kiểm tra quyền truy cập..." />;
   }
 
   if (!user) {
