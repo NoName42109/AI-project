@@ -1,9 +1,51 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to all collections for testing purposes
-    match /{document=**} {
-      allow read, write: if true;
+    
+    // Hàm hỗ trợ kiểm tra Role
+    function isAuthenticated() { return request.auth != null; }
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() { return isAuthenticated() && getUserData().role == 'admin'; }
+    function isTeacher() { return isAuthenticated() && getUserData().role == 'teacher'; }
+    function isStudent() { return isAuthenticated() && getUserData().role == 'student'; }
+
+    // USERS
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+    }
+
+    // EXAMS
+    match /exams/{examId} {
+      allow read: if isAuthenticated(); // Ai cũng xem được đề (nếu được giao)
+      allow create: if isTeacher() && request.resource.data.uploadedBy == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.uploadedBy == request.auth.uid);
+    }
+
+    // QUESTIONS
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
+    // STUDENT EXAMS (Kết quả thi)
+    match /student_exams/{docId} {
+      // Học sinh xem bài mình, Giáo viên xem bài của học sinh mình, Admin xem hết
+      allow read: if isAdmin() 
+                  || (isStudent() && resource.data.studentId == request.auth.uid)
+                  || (isTeacher() && resource.data.teacherId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+    }
+
+    // PRACTICES
+    match /practices/{docId} {
+      allow read: if isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+    }
+    
+    // CACHE (Chỉ cho phép đọc/ghi tự động từ App)
+    match /question_cache/{hash} {
+      allow read, write: if isTeacher() || isAdmin();
     }
   }
 }

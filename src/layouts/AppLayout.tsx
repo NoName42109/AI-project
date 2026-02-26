@@ -1,13 +1,16 @@
 import React, { ReactNode } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useMobile } from '../hooks/useMobile';
 import { GlobalApiWarning } from '../components/GlobalApiWarning';
+import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../services/firebase';
 
 type ViewMode = 'TEACHER' | 'STUDENT';
 type StudentView = 'DASHBOARD' | 'PRACTICE';
 type TeacherView = 'UPLOAD' | 'BANK' | 'API_MANAGEMENT';
 
 interface AppLayoutProps {
-  children: ReactNode;
+  children?: ReactNode;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   studentView: StudentView;
@@ -26,6 +29,17 @@ const AppLayout: React.FC<AppLayoutProps> = ({
   setTeacherView
 }) => {
   const isMobile = useMobile();
+  const { user, role } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
 
   // Navigation Items
   const studentNavItems = [
@@ -69,33 +83,18 @@ const AppLayout: React.FC<AppLayoutProps> = ({
             <p className="text-xs text-neutral-400 pl-1">Hệ thống học tập thích ứng</p>
           </div>
 
-          {/* Role Switcher */}
-          <div className="px-6 mb-8">
-            <div className="bg-neutral-100 p-1 rounded-xl flex">
-              <button 
-                onClick={() => setViewMode('STUDENT')}
-                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${viewMode === 'STUDENT' ? 'bg-white text-neutral-900 shadow-sm ring-1 ring-black/5' : 'text-neutral-500 hover:text-neutral-700'}`}
-              >
-                Học sinh
-              </button>
-              <button 
-                onClick={() => setViewMode('TEACHER')}
-                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${viewMode === 'TEACHER' ? 'bg-white text-neutral-900 shadow-sm ring-1 ring-black/5' : 'text-neutral-500 hover:text-neutral-700'}`}
-              >
-                Giáo viên
-              </button>
-            </div>
-          </div>
-
           {/* Navigation Items */}
-          <nav className="flex-1 px-4 space-y-1">
-            {viewMode === 'STUDENT' ? (
+          <nav className="flex-1 px-4 space-y-1 mt-4">
+            {role === 'student' ? (
               <>
                 <div className="px-4 py-2 text-xs font-bold text-neutral-400 uppercase tracking-wider">Học tập</div>
                 {studentNavItems.map((item) => (
                   <button 
                     key={item.id}
-                    onClick={() => setStudentView(item.id as StudentView)}
+                    onClick={() => {
+                      setStudentView(item.id as StudentView);
+                      if (item.id === 'DASHBOARD') navigate('/student/dashboard');
+                    }}
                     className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${studentView === item.id ? 'bg-pastel-blue text-primary-700' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
                   >
                     {item.icon(studentView === item.id)}
@@ -106,26 +105,21 @@ const AppLayout: React.FC<AppLayoutProps> = ({
             ) : (
               <>
                 <div className="px-4 py-2 text-xs font-bold text-neutral-400 uppercase tracking-wider">Quản lý</div>
+                {role === 'admin' && (
+                  <button 
+                    onClick={() => navigate('/admin/dashboard')}
+                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${window.location.pathname.includes('/admin') ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                    Admin Dashboard
+                  </button>
+                )}
                 <button 
-                  onClick={() => setTeacherView?.('UPLOAD')}
-                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'UPLOAD' || !teacherView ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                  onClick={() => navigate('/teacher/dashboard')}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${window.location.pathname.includes('/teacher') ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  Upload & Xử lý
-                </button>
-                <button 
-                  onClick={() => setTeacherView?.('BANK')}
-                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'BANK' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
-                >
-                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                   Kho câu hỏi
-                </button>
-                <button 
-                  onClick={() => setTeacherView?.('API_MANAGEMENT')}
-                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${teacherView === 'API_MANAGEMENT' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
-                >
-                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
-                   Quản lý API
+                  Teacher Dashboard
                 </button>
               </>
             )}
@@ -133,14 +127,21 @@ const AppLayout: React.FC<AppLayoutProps> = ({
 
           {/* User Info */}
           <div className="p-6 border-t border-neutral-100">
-             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-neutral-500">
-                  {viewMode === 'STUDENT' ? 'MA' : 'T'}
-                </div>
-                <div>
-                   <p className="text-sm font-bold text-neutral-800">{viewMode === 'STUDENT' ? 'Minh Anh' : 'Thầy Giáo'}</p>
-                   <p className="text-xs text-neutral-400">{viewMode === 'STUDENT' ? 'Học sinh lớp 9A' : 'Administrator'}</p>
-                </div>
+             <div className="flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-neutral-500 uppercase">
+                    {user?.email?.substring(0, 2) || 'U'}
+                  </div>
+                  <div className="overflow-hidden">
+                     <p className="text-sm font-bold text-neutral-800 truncate">{user?.email}</p>
+                     <p className="text-xs text-neutral-400 capitalize">{role}</p>
+                  </div>
+               </div>
+               <button onClick={handleLogout} className="p-2 text-neutral-400 hover:text-red-500 transition-colors" title="Đăng xuất">
+                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                 </svg>
+               </button>
              </div>
           </div>
         </aside>
@@ -148,7 +149,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative flex flex-col h-full">
-        {viewMode === 'TEACHER' && <GlobalApiWarning />}
+        {role !== 'student' && <GlobalApiWarning />}
+        
         {/* Mobile Header */}
         {!isPracticeMode && (
           <div className="md:hidden h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-4 sticky top-0 z-20">
@@ -160,27 +162,25 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                 </div>
                 <span className="font-bold text-neutral-900">Vieta Master</span>
              </div>
-             <button 
-               onClick={() => setViewMode(viewMode === 'STUDENT' ? 'TEACHER' : 'STUDENT')}
-               className="text-xs font-semibold bg-neutral-100 px-3 py-1.5 rounded-full text-neutral-600"
-             >
-               {viewMode === 'STUDENT' ? 'Học sinh' : 'Giáo viên'}
-             </button>
+             <button onClick={handleLogout} className="text-xs font-semibold text-red-500">Đăng xuất</button>
           </div>
         )}
 
         {/* Content Scroll Area */}
         <div className={`flex-1 overflow-y-auto ${!isPracticeMode ? 'pb-20 md:pb-0' : ''}`}>
-          {children}
+          {children || <Outlet />}
         </div>
 
         {/* Mobile Bottom Navigation */}
-        {viewMode === 'STUDENT' && !isPracticeMode && (
+        {role === 'student' && !isPracticeMode && (
           <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 h-16 flex items-center justify-around z-30 px-2 pb-safe">
             {studentNavItems.map((item) => (
               <button 
                 key={item.id}
-                onClick={() => setStudentView(item.id as StudentView)}
+                onClick={() => {
+                  setStudentView(item.id as StudentView);
+                  if (item.id === 'DASHBOARD') navigate('/student/dashboard');
+                }}
                 className="flex flex-col items-center justify-center w-full h-full gap-1"
               >
                 <div className={`${studentView === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>

@@ -1,45 +1,46 @@
-import React, { useState } from 'react';
-import StudentDashboard from './components/StudentDashboard';
-import StudentPracticeView from './components/StudentPracticeView';
-import TeacherDashboard from './components/TeacherDashboard';
-import ExamView from './components/ExamView';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './src/contexts/AuthContext';
+import { ProtectedRoute } from './src/components/ProtectedRoute';
+import { Login } from './src/pages/auth/Login';
+import { Register } from './src/pages/auth/Register';
+import { AdminDashboard } from './src/pages/admin/AdminDashboard';
+import { TeacherDashboard } from './src/pages/teacher/TeacherDashboard';
+import { StudentDashboard } from './src/pages/student/StudentDashboard';
 import AppLayout from './src/layouts/AppLayout';
-import { ApiManagementPage } from './src/pages/admin/ApiManagementPage';
-
-type ViewMode = 'TEACHER' | 'STUDENT';
-type StudentView = 'DASHBOARD' | 'PRACTICE' | 'EXAM';
-type TeacherView = 'UPLOAD' | 'BANK' | 'API_MANAGEMENT';
 
 const App: React.FC = () => {
-  const [viewMode, setViewMode] = useState<ViewMode>('STUDENT');
-  const [studentView, setStudentView] = useState<StudentView>('DASHBOARD');
-  const [teacherView, setTeacherView] = useState<TeacherView>('UPLOAD');
-
   return (
-    <AppLayout 
-      viewMode={viewMode} 
-      setViewMode={setViewMode} 
-      studentView={studentView} 
-      setStudentView={setStudentView}
-      teacherView={teacherView}
-      setTeacherView={setTeacherView}
-    >
-      {viewMode === 'TEACHER' ? (
-         teacherView === 'API_MANAGEMENT' ? (
-           <ApiManagementPage />
-         ) : (
-           <TeacherDashboard />
-         )
-      ) : (
-         studentView === 'DASHBOARD' ? (
-            <StudentDashboard onNavigate={setStudentView} />
-         ) : studentView === 'PRACTICE' ? (
-            <StudentPracticeView onBack={() => setStudentView('DASHBOARD')} />
-         ) : (
-            <ExamView studentId="student_1" onBack={() => setStudentView('DASHBOARD')} />
-         )
-      )}
-    </AppLayout>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          {/* Admin Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route path="/admin" element={<AppLayout viewMode="TEACHER" setViewMode={() => {}} studentView="DASHBOARD" setStudentView={() => {}} teacherView="UPLOAD" setTeacherView={() => {}} />}>
+              <Route path="dashboard" element={<AdminDashboard />} />
+            </Route>
+          </Route>
+
+          {/* Teacher Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['teacher', 'admin']} />}>
+            <Route path="/teacher" element={<AppLayout viewMode="TEACHER" setViewMode={() => {}} studentView="DASHBOARD" setStudentView={() => {}} teacherView="UPLOAD" setTeacherView={() => {}} />}>
+              <Route path="dashboard" element={<TeacherDashboard />} />
+            </Route>
+          </Route>
+
+          {/* Student Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+            <Route path="/student" element={<AppLayout viewMode="STUDENT" setViewMode={() => {}} studentView="DASHBOARD" setStudentView={() => {}} teacherView="UPLOAD" setTeacherView={() => {}} />}>
+              <Route path="dashboard" element={<StudentDashboard />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 };
 
