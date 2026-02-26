@@ -17,13 +17,25 @@ export const mathOcrService = {
    * Scan document using Llama Cloud API with Mathpix-like architecture
    */
   async scanDocument(file: File): Promise<MathOcrResult> {
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
+      // Convert file to base64
+      const base64String = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+      });
+
       const response = await fetch('/api/math-ocr', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type,
+          fileData: base64String,
+        }),
       });
 
       const data = await response.json();

@@ -1,12 +1,3 @@
-import express from "express";
-import multer from "multer";
-
-const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
 // Helper cho Auto Rotation
 let currentLlamaIndex = 0;
 async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<T>): Promise<T> {
@@ -39,53 +30,19 @@ async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<T>): 
   throw new Error(`Tất cả ${keys.length} API keys đều đã hết Quota hoặc bị từ chối.`);
 }
 
-// API 1: Lấy danh sách API Keys
-app.get("/api/keys/list", async (req, res) => {
-  const keysStr = process.env.LLAMA_API_KEYS || process.env.LLAMA_API_KEY || '';
-  const keys = keysStr.split(',').map(k => k.trim()).filter(k => k.length > 0);
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
 
-  if (keys.length === 0) {
-    return res.json([]);
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const results = await Promise.all(keys.map(async (key, index) => {
-    const maskedKey = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-    try {
-      const fetchRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/usage', {
-        headers: { 'Authorization': `Bearer ${key}` }
-      });
-      
-      if (fetchRes.ok) {
-        const data = await fetchRes.json();
-        const total = data.total_pages_allowed || 1000;
-        const used = data.total_pages_used || 0;
-        const remainingPercent = Math.max(0, ((total - used) / total) * 100);
-        
-        let status = 'active';
-        if (remainingPercent <= 0) status = 'disabled';
-        else if (remainingPercent < 20) status = 'low_quota';
-
-        return {
-          id: `env_key_${index + 1}`,
-          service: 'llamacloud',
-          maskedKey,
-          quotaRemainingPercent: remainingPercent,
-          status,
-          usageCount: used,
-          lastUsed: Date.now()
-        };
-      }
-      return { id: `env_key_${index + 1}`, service: 'llamacloud', maskedKey, status: 'disabled', quotaRemainingPercent: 0, usageCount: 0 };
-    } catch (e) {
-      return { id: `env_key_${index + 1}`, service: 'llamacloud', maskedKey, status: 'error', quotaRemainingPercent: 0, usageCount: 0 };
-    }
-  }));
-
-  res.json(results);
-});
-
-// API 2: Math OCR
-app.post("/api/math-ocr", async (req, res) => {
   try {
     const { fileName, mimeType, fileData } = req.body;
     
@@ -241,7 +198,7 @@ app.post("/api/math-ocr", async (req, res) => {
       needs_review: needsReview
     };
 
-    res.json(finalOutput);
+    res.status(200).json(finalOutput);
 
   } catch (error: any) {
     console.error('[MER Pipeline Error]', error);
@@ -259,31 +216,4 @@ app.post("/api/math-ocr", async (req, res) => {
       needs_review: true
     });
   }
-});
-
-// Start server for local development
-async function startServer() {
-  const PORT = 3000;
-
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static("dist"));
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
-
-// Only start the server if not running on Vercel
-if (!process.env.VERCEL) {
-  startServer();
-}
-
-export default app;
