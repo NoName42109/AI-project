@@ -4,21 +4,36 @@ import cors from "cors";
 import { apiKeyManager } from "./src/services/apiKeyManager";
 
 // Polyfill for Node.js environments where FormData/Blob/fetch might be missing or limited
-if (typeof global.fetch === 'undefined') {
-  console.log("[Polyfill] Loading fetch polyfill...");
-  // @ts-ignore
-  const nodeFetch = await import('node-fetch');
-  global.fetch = nodeFetch.default;
-  global.Headers = nodeFetch.Headers;
-  global.Request = nodeFetch.Request;
-  global.Response = nodeFetch.Response;
+// We use a more robust approach that avoids top-level await at the module root
+async function ensurePolyfills() {
+  if (typeof global.fetch === 'undefined') {
+    console.log("[Polyfill] Loading fetch polyfill...");
+    try {
+      // @ts-ignore
+      const nodeFetch = await import('node-fetch');
+      global.fetch = nodeFetch.default as any;
+      global.Headers = nodeFetch.Headers as any;
+      global.Request = nodeFetch.Request as any;
+      global.Response = nodeFetch.Response as any;
+    } catch (e) {
+      console.error("[Polyfill] Failed to load node-fetch", e);
+    }
+  }
+
+  if (typeof global.FormData === 'undefined') {
+    console.log("[Polyfill] Loading FormData polyfill...");
+    try {
+      // @ts-ignore
+      const FormDataPolyfill = await import('form-data');
+      global.FormData = FormDataPolyfill.default as any;
+    } catch (e) {
+      console.error("[Polyfill] Failed to load form-data", e);
+    }
+  }
 }
 
-if (typeof global.FormData === 'undefined') {
-  console.log("[Polyfill] Loading FormData polyfill...");
-  // @ts-ignore
-  global.FormData = (await import('form-data')).default;
-}
+// Call polyfills immediately but don't block module loading
+ensurePolyfills().catch(console.error);
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -315,6 +330,7 @@ app.post(["/api/math-ocr", "/math-ocr"], async (req, res) => {
 
 // API 3: Math OCR Stream (New Architecture)
 app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), async (req, res) => {
+  console.log("[Upload Stream] Request started");
   let headersSent = false;
 
   const sendEvent = (step: string, percent: number, data?: any) => {
@@ -334,7 +350,8 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
   };
 
   try {
-    console.log("[Upload Stream] New request received");
+    // Ensure polyfills are ready before proceeding
+    await ensurePolyfills();
     
     let buffer: Buffer;
     let fileName: string;
@@ -342,49 +359,53 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
 
     // Support both JSON (Base64) and Multipart (File)
     if (req.file) {
-      console.log(`[Upload Stream] Received via Multipart: ${req.file.originalname}`);
+      console.log(`[Upload Stream] Received via Multipart: ${req.file.originalname} (${req.file.size} bytes)`);
       buffer = req.file.buffer;
       fileName = req.file.originalname;
       mimeType = req.file.mimetype;
-    } else {
+    } else if (req.body && req.body.fileData) {
       const { fileName: fn, mimeType: mt, fileData } = req.body;
-      if (!fileData) {
-        console.error("[Upload Stream] No file data in request body");
-        return res.status(400).json({ 
-          error: 'No file provided',
-          message: 'Vui lòng cung cấp file qua Multipart hoặc JSON base64'
-        });
-      }
       console.log(`[Upload Stream] Received via JSON: ${fn}`);
       const base64Part = fileData.split(',')[1] || fileData;
       buffer = Buffer.from(base64Part, 'base64');
       fileName = fn || 'document.pdf';
       mimeType = mt || 'application/pdf';
+    } else {
+      console.error("[Upload Stream] No file data found in request");
+      return res.status(400).json({ 
+        error: 'No file provided',
+        message: 'Vui lòng cung cấp file qua Multipart (field: file) hoặc JSON base64'
+      });
     }
 
-    if (!process.env.LLAMA_API_KEYS && !process.env.LLAMA_API_KEY) {
-      throw new Error("Chưa cấu hình LLAMA_API_KEYS trong biến môi trường.");
+    const llamaKeys = process.env.LLAMA_API_KEYS || process.env.LLAMA_API_KEY;
+    if (!llamaKeys) {
+      console.error("[Upload Stream] LLAMA_API_KEYS missing");
+      throw new Error("Chưa cấu hình LLAMA_API_KEYS trong biến môi trường. Vui lòng kiểm tra Vercel Dashboard.");
     }
 
     sendEvent('uploading', 10);
     sendEvent('uploading', 20);
 
     const resultJson = await withLlamaKeyRotation(async (apiKey) => {
-      console.log("[Upload Stream] Sending to LlamaCloud...");
+      console.log("[Upload Stream] Sending to LlamaCloud API...");
+      
+      // Use a more robust way to build the form data for fetch
       const uploadData = new FormData();
       
-      // Handle both native FormData and form-data package
-      if (typeof (uploadData as any).append === 'function') {
-        if (typeof global.Blob !== 'undefined') {
-          const blob = new Blob([buffer], { type: mimeType });
-          uploadData.append('file', blob, fileName);
-        } else {
-          // Fallback for older Node.js with form-data package
-          (uploadData as any).append('file', buffer, { filename: fileName, contentType: mimeType });
-        }
-      }
+      // Check if we are using the polyfilled FormData (form-data package)
+      const isPolyfilledFormData = (uploadData as any).getHeaders !== undefined;
       
-      uploadData.append('premium_mode', 'true');
+      if (isPolyfilledFormData) {
+        // form-data package usage
+        (uploadData as any).append('file', buffer, { filename: fileName, contentType: mimeType });
+        (uploadData as any).append('premium_mode', 'true');
+      } else {
+        // Native FormData usage (Node 18+)
+        const blob = new Blob([buffer], { type: mimeType });
+        uploadData.append('file', blob, fileName);
+        uploadData.append('premium_mode', 'true');
+      }
       
       const instruction = `
         Bạn là chuyên gia Toán học và OCR. Nhiệm vụ của bạn là đọc đề thi và trích xuất dữ liệu.
@@ -418,18 +439,30 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
       `;
       uploadData.append('parsing_instruction', instruction);
 
-      sendEvent('ocr', 25);
-      const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
+      const fetchOptions: any = {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
+        headers: { 
+          'Authorization': `Bearer ${apiKey}`
+        },
         body: uploadData
-      });
+      };
+
+      // If using form-data package, we must add its headers
+      if (isPolyfilledFormData) {
+        Object.assign(fetchOptions.headers, (uploadData as any).getHeaders());
+      }
+
+      sendEvent('ocr', 25);
+      const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', fetchOptions);
 
       if (!uploadRes.ok) {
-        throw new Error(`Upload failed: ${uploadRes.statusText}`);
+        const errorText = await uploadRes.text();
+        console.error(`[LlamaCloud] Upload failed: ${uploadRes.status} ${errorText}`);
+        throw new Error(`LlamaCloud Upload failed (${uploadRes.status}): ${errorText.substring(0, 100)}`);
       }
 
       const { id: jobId } = await uploadRes.json();
+      console.log(`[Upload Stream] Job created: ${jobId}`);
       sendEvent('ocr', 30);
 
       let parsedJson: any = null;
