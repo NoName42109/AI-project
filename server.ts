@@ -284,6 +284,155 @@ app.post("/api/math-ocr", async (req, res) => {
   }
 });
 
+// API 3: Math OCR Stream (New Architecture)
+app.post("/api/math-ocr-stream", async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (step: string, percent: number, data?: any) => {
+    res.write(`data: ${JSON.stringify({ step, percent, data })}\n\n`);
+  };
+
+  try {
+    const { fileName, mimeType, fileData } = req.body;
+    
+    if (!fileData) {
+      sendEvent('error', 0, { message: 'No file provided' });
+      return res.end();
+    }
+
+    sendEvent('uploading', 10);
+    const base64Part = fileData.split(',')[1];
+    const buffer = Buffer.from(base64Part, 'base64');
+    sendEvent('uploading', 20);
+
+    const resultJson = await withLlamaKeyRotation(async (apiKey) => {
+      const uploadData = new FormData();
+      const blob = new Blob([buffer], { type: mimeType });
+      uploadData.append('file', blob, fileName);
+      uploadData.append('premium_mode', 'true');
+      
+      const instruction = `
+        Bạn là chuyên gia Toán học và OCR. Nhiệm vụ của bạn là đọc đề thi và trích xuất dữ liệu.
+        CHÚ Ý ĐẶC BIỆT:
+        - Phân số lồng nhau: Phải dùng \\frac{a}{b}.
+        - Hệ phương trình: BẮT BUỘC dùng \\begin{cases} ... \\end{cases}.
+        - Ký hiệu đặc biệt: Delta là \\Delta, Mọi là \\forall, Tồn tại là \\exists.
+        - Tham số m: Phân biệt rõ chữ 'm' (tham số) và 'm' (mét). Trong ngữ cảnh phương trình, nó là tham số $m$.
+        - Nghiệm: x1, x2 phải viết là x_1, x_2.
+        
+        PHÂN LOẠI DẠNG TOÁN:
+        Xác định xem đề thi này có chứa câu hỏi về "Hệ thức Vi-ét" lớp 9 hay không.
+        Các dạng toán Vi-ét thường gặp:
+        - tim_m: Tìm m để phương trình có 2 nghiệm thỏa mãn điều kiện.
+        - tinh_tong_tich: Tính giá trị biểu thức đối xứng giữa các nghiệm.
+        - lap_pt: Lập phương trình bậc 2 khi biết 2 nghiệm.
+        - other: Các dạng khác.
+
+        TRẢ VỀ DUY NHẤT JSON THEO FORMAT SAU (Không kèm markdown code block):
+        {
+           "isViet": true/false,
+           "topic": "he_thuc_viet" hoặc "other",
+           "questionCount": số lượng câu hỏi toán,
+           "questions": [
+              {
+                 "type": "tim_m" | "tinh_tong_tich" | "lap_pt" | "other",
+                 "latex": "nội dung câu hỏi bằng LaTeX chuẩn"
+              }
+           ]
+        }
+      `;
+      uploadData.append('parsing_instruction', instruction);
+
+      sendEvent('ocr', 25);
+      const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: uploadData
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed: ${uploadRes.statusText}`);
+      }
+
+      const { id: jobId } = await uploadRes.json();
+      sendEvent('ocr', 30);
+
+      let parsedJson: any = null;
+      let finalHeaders: Headers | undefined;
+      const maxAttempts = 15;
+      
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        
+        // Progress from 30 to 50 during polling
+        const progress = Math.min(50, 30 + (i * 2));
+        sendEvent('ocr', progress);
+
+        const statusRes = await fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}`, {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'SUCCESS') {
+          sendEvent('normalize', 60);
+          const resultRes = await fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          finalHeaders = resultRes.headers;
+          const resultData = await resultRes.json();
+          
+          sendEvent('classifying', 75);
+          const fullText = resultData.markdown || "";
+          const jsonMatch = fullText.match(/```(?:json)?\n([\s\S]*?)\n```/) || fullText.match(/\{[\s\S]*\}/);
+          const cleanJsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : fullText;
+          
+          try {
+            parsedJson = JSON.parse(cleanJsonStr.trim());
+            if (parsedJson.isViet === undefined || !parsedJson.questions) {
+              throw new Error("Invalid JSON structure");
+            }
+            break;
+          } catch (e) {
+            console.warn("[LlamaParse] JSON parse failed, using fallback");
+            // Fallback logic
+            const isViet = fullText.toLowerCase().includes('vi-ét') || fullText.toLowerCase().includes('vi-et') || fullText.includes('x_1') || fullText.includes('x_2');
+            parsedJson = {
+              isViet: isViet,
+              topic: isViet ? "he_thuc_viet" : "other",
+              questionCount: 1,
+              questions: [
+                { type: "other", latex: fullText }
+              ]
+            };
+            break;
+          }
+        }
+        
+        if (statusData.status === 'ERROR') {
+          throw new Error('Llama Cloud xử lý thất bại');
+        }
+      }
+
+      if (!parsedJson) {
+        throw new Error('Timeout: Llama Cloud xử lý quá lâu');
+      }
+
+      return { result: parsedJson, headers: finalHeaders };
+    });
+
+    sendEvent('saving', 90);
+    sendEvent('done', 100, resultJson);
+    res.end();
+
+  } catch (error: any) {
+    console.error('[Upload Stream Error]', error);
+    sendEvent('error', 0, { message: error.message });
+    res.end();
+  }
+});
+
 // Start server for local development
 async function startServer() {
   const PORT = 3000;
