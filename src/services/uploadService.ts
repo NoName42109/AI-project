@@ -5,13 +5,14 @@ export type UploadStep = 'idle' | 'uploading' | 'ocr' | 'normalize' | 'classifyi
 
 export interface Question {
   type: string;
+  difficulty: 'easy' | 'medium' | 'hard';
   latex: string;
 }
 
 export interface ScanResult {
   isViet: boolean;
   topic: string;
-  questionCount: number;
+  totalQuestions: number;
   questions: Question[];
 }
 
@@ -116,7 +117,7 @@ export const uploadService = {
       title: title,
       uploadedBy: userId,
       uploadedAt: new Date().toISOString(),
-      questionCount: result.questionCount || result.questions?.length || 0,
+      questionCount: result.totalQuestions || result.questions?.length || 0,
       questions: result.questions || [],
       topic: result.topic || 'he_thuc_viet',
       isViet: result.isViet,

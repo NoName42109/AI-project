@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 export interface ApiKeyRecord {
   id: string;
@@ -16,9 +16,9 @@ class ApiKeyManager {
    * 1. Parse ENV correctly
    */
   loadKeysFromEnv(): string[] {
-    const keysStr = process.env.LLAMA_API_KEYS || process.env.LLAMA_API_KEY || '';
+    const keysStr = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
     if (!keysStr) {
-      console.warn('[ApiKeyManager] LLAMA_API_KEYS is empty or undefined in environment variables.');
+      console.warn('[ApiKeyManager] GEMINI_API_KEYS is empty or undefined in environment variables.');
       return [];
     }
     
@@ -37,15 +37,14 @@ class ApiKeyManager {
 
     for (let i = 0; i < rawKeys.length; i++) {
       const key = rawKeys[i];
-      const maskedKey = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-      const docId = `llamacloud_key_${maskedKey}`; // Use masked key as ID to avoid storing full key in DB
+      const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
+      const docId = `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
       
       try {
         const keyRef = doc(db, 'api_keys', docId);
         const keyDoc = await getDoc(keyRef);
 
         if (!keyDoc.exists()) {
-          // Initialize new key
           const newRecord: ApiKeyRecord = {
             id: docId,
             maskedKey,
@@ -59,17 +58,10 @@ class ApiKeyManager {
           records.push(newRecord);
         } else {
           const data = keyDoc.data() as ApiKeyRecord;
-          // Ensure quota is never 0 if usageCount is 0
-          if (data.usageCount === 0 && data.quotaRemainingPercent === 0) {
-            data.quotaRemainingPercent = 100;
-            data.status = 'active';
-            await updateDoc(keyRef, { quotaRemainingPercent: 100, status: 'active' });
-          }
           records.push({ ...data, id: docId, maskedKey });
         }
       } catch (error) {
         console.error(`[ApiKeyManager] Error initializing key ${maskedKey}:`, error);
-        // Fallback for UI if DB fails
         records.push({
           id: docId,
           maskedKey,
@@ -93,11 +85,10 @@ class ApiKeyManager {
     if (rawKeys.length === 0) return null;
 
     for (const key of rawKeys) {
-      const maskedKey = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-      const docId = `llamacloud_key_${maskedKey.replace(/\*/g, '_')}`;
+      const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
+      const docId = `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
       
       try {
-        // Only try Firestore if it's initialized
         const { isFirebaseInitialized } = await import('./firebase');
         if (isFirebaseInitialized) {
           const keyRef = doc(db, 'api_keys', docId);
@@ -105,29 +96,26 @@ class ApiKeyManager {
           
           if (keyDoc.exists()) {
             const data = keyDoc.data();
-            if (data.status === 'active' || data.status === 'low_quota') {
+            if (data.status !== 'disabled') {
               return { key, docId };
             }
-            continue; // Try next key if this one is disabled
+            continue;
           }
         }
-        
-        // If Firestore not initialized or key not in DB, use it as a fresh key
         return { key, docId };
       } catch (error) {
-        console.error(`[ApiKeyManager] Error checking key status for ${maskedKey}:`, error);
-        // Fallback to use it anyway if DB read fails
+        console.error(`[ApiKeyManager] Error checking key status:`, error);
         return { key, docId };
       }
     }
     
-    return null; // All keys disabled
+    return null;
   }
 
   /**
-   * Update quota based on API response headers or success
+   * Update usage tracking
    */
-  async updateQuotaFromResponse(docId: string, responseHeaders: Headers, isSuccess: boolean) {
+  async trackUsage(docId: string, isSuccess: boolean) {
     try {
       const keyRef = doc(db, 'api_keys', docId);
       const keyDoc = await getDoc(keyRef);
@@ -141,26 +129,12 @@ class ApiKeyManager {
 
       if (isSuccess) {
         newUsageCount += 1;
-        
-        // Try to parse usage from headers if LlamaCloud provides them
-        // Example: x-ratelimit-remaining, x-quota-remaining, etc.
-        // If not provided, we just track usageCount and estimate or keep quota at 100% until it fails with 429
-        const remainingPages = responseHeaders.get('x-ratelimit-remaining') || responseHeaders.get('x-quota-remaining');
-        const totalPages = responseHeaders.get('x-ratelimit-limit') || responseHeaders.get('x-quota-limit');
-        
-        if (remainingPages && totalPages) {
-          const remaining = parseInt(remainingPages, 10);
-          const total = parseInt(totalPages, 10);
-          if (!isNaN(remaining) && !isNaN(total) && total > 0) {
-            newQuota = Math.max(0, (remaining / total) * 100);
-          }
-        } else if (newQuota === 100 && newUsageCount > 0) {
-          // If we can't get exact quota but we used it, we just remove the "isNew" flag essentially
-          // We don't artificially reduce quota to 0.
-        }
+        // Estimate quota: Assuming 1500 requests per key (free tier)
+        // This is a rough estimate as requested
+        const estimatedLimit = 1500;
+        newQuota = Math.max(0, ((estimatedLimit - newUsageCount) / estimatedLimit) * 100);
       } else {
-        // If it failed with 429 (Too Many Requests) or 402 (Payment Required)
-        newQuota = 0;
+        // If it failed with quota error, we'll handle it in markKeyAsExhausted
       }
 
       if (newQuota <= 0) newStatus = 'disabled';
@@ -176,12 +150,12 @@ class ApiKeyManager {
       });
       
     } catch (error) {
-      console.error(`[ApiKeyManager] Error updating quota for ${docId}:`, error);
+      console.error(`[ApiKeyManager] Error updating usage for ${docId}:`, error);
     }
   }
   
   /**
-   * Mark key as exhausted (429/403)
+   * Mark key as exhausted
    */
   async markKeyAsExhausted(docId: string) {
     try {

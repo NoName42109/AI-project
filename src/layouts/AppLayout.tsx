@@ -106,13 +106,22 @@ const AppLayout: React.FC<AppLayoutProps> = ({
               <>
                 <div className="px-4 py-2 text-xs font-bold text-neutral-400 uppercase tracking-wider">Quản lý</div>
                 {role === 'admin' && (
-                  <button 
-                    onClick={() => navigate('/admin/dashboard')}
-                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${window.location.pathname.includes('/admin') ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                    Admin Dashboard
-                  </button>
+                  <>
+                    <button 
+                      onClick={() => navigate('/admin/dashboard')}
+                      className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${window.location.pathname === '/admin/dashboard' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                      Admin Dashboard
+                    </button>
+                    <button 
+                      onClick={() => navigate('/admin/api-keys')}
+                      className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 ${window.location.pathname === '/admin/api-keys' ? 'bg-neutral-800 text-white shadow-md' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                      Quản lý API Key
+                    </button>
+                  </>
                 )}
                 <button 
                   onClick={() => navigate('/teacher/dashboard')}

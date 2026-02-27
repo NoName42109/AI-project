@@ -6,7 +6,9 @@ export interface ApiKeyRecord {
   service: string;
   maskedKey: string;
   quotaRemainingPercent: number;
-  status: 'active' | 'standby' | 'low_quota' | 'disabled';
+  status: 'active' | 'low_quota' | 'disabled';
+  usageCount: number;
+  lastUsed: number;
 }
 
 export const ApiManagementPage: React.FC = () => {
@@ -45,7 +47,7 @@ export const ApiManagementPage: React.FC = () => {
         border: 'border-neutral-200',
         bar: 'bg-neutral-400',
         icon: <XCircle className="w-4 h-4 text-neutral-500" />,
-        label: 'Disabled',
+        label: 'Inactive',
         opacity: 'opacity-60'
       };
     }
@@ -60,17 +62,6 @@ export const ApiManagementPage: React.FC = () => {
         opacity: 'opacity-100'
       };
     }
-    if (status === 'standby') {
-      return {
-        color: 'text-blue-700',
-        bg: 'bg-blue-50',
-        border: 'border-blue-200',
-        bar: 'bg-blue-500',
-        icon: <CheckCircle className="w-4 h-4 text-blue-600" />,
-        label: 'Standby',
-        opacity: 'opacity-100'
-      };
-    }
     return {
       color: 'text-green-700',
       bg: 'bg-green-50',
@@ -82,16 +73,21 @@ export const ApiManagementPage: React.FC = () => {
     };
   };
 
+  const formatDate = (timestamp: number) => {
+    if (!timestamp) return 'Chưa sử dụng';
+    return new Date(timestamp).toLocaleString('vi-VN');
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-800 flex items-center gap-2">
             <Key className="w-6 h-6 text-primary-600" />
-            Quản lý API Key
+            Quản lý API Key Gemini
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Giám sát Quota và trạng thái Auto Rotation của các dịch vụ OCR/AI.
+            Giám sát Quota và trạng thái Auto Rotation của các dịch vụ Gemini AI.
           </p>
         </div>
         <button 
@@ -121,7 +117,7 @@ export const ApiManagementPage: React.FC = () => {
         <div className="text-center py-16 bg-white border border-neutral-200 rounded-xl shadow-sm">
           <Key className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-neutral-900">Chưa có API Key nào</h3>
-          <p className="text-sm text-neutral-500 mt-1">Vui lòng thêm API Key vào biến môi trường `LLAMA_API_KEYS` trên Vercel.</p>
+          <p className="text-sm text-neutral-500 mt-1">Vui lòng thêm API Key vào biến môi trường `GEMINI_API_KEYS` trên Vercel.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -149,9 +145,20 @@ export const ApiManagementPage: React.FC = () => {
                     </p>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-semibold">Số lần dùng</p>
+                      <p className="text-lg font-bold text-neutral-800">{key.usageCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-semibold">Dùng cuối</p>
+                      <p className="text-xs text-neutral-700 leading-tight">{formatDate(key.lastUsed)}</p>
+                    </div>
+                  </div>
+
                   <div>
                     <div className="flex justify-between items-end mb-1.5">
-                      <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold">Quota Còn Lại</p>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold">Quota Còn Lại (Ước tính)</p>
                       <span className={`text-sm font-bold ${key.quotaRemainingPercent < 20 ? 'text-red-600' : 'text-neutral-700'}`}>
                         {Math.max(0, key.quotaRemainingPercent).toFixed(1)}%
                       </span>
