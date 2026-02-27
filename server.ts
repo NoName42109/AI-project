@@ -3,6 +3,23 @@ import multer from "multer";
 import cors from "cors";
 import { apiKeyManager } from "./src/services/apiKeyManager";
 
+// Polyfill for Node.js environments where FormData/Blob/fetch might be missing or limited
+if (typeof global.fetch === 'undefined') {
+  console.log("[Polyfill] Loading fetch polyfill...");
+  // @ts-ignore
+  const nodeFetch = await import('node-fetch');
+  global.fetch = nodeFetch.default;
+  global.Headers = nodeFetch.Headers;
+  global.Request = nodeFetch.Request;
+  global.Response = nodeFetch.Response;
+}
+
+if (typeof global.FormData === 'undefined') {
+  console.log("[Polyfill] Loading FormData polyfill...");
+  // @ts-ignore
+  global.FormData = (await import('form-data')).default;
+}
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -297,7 +314,7 @@ app.post(["/api/math-ocr", "/math-ocr"], async (req, res) => {
 });
 
 // API 3: Math OCR Stream (New Architecture)
-app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
+app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), async (req, res) => {
   let headersSent = false;
 
   const sendEvent = (step: string, percent: number, data?: any) => {
@@ -307,6 +324,7 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
+        res.status(200);
         headersSent = true;
       }
       res.write(`data: ${JSON.stringify({ step, percent, data })}\n\n`);
@@ -316,26 +334,56 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
   };
 
   try {
-    const { fileName, mimeType, fileData } = req.body;
+    console.log("[Upload Stream] New request received");
     
-    if (!fileData) {
-      console.error("[Upload Stream] No file data in request body");
-      return res.status(400).json({ error: 'No file provided' });
+    let buffer: Buffer;
+    let fileName: string;
+    let mimeType: string;
+
+    // Support both JSON (Base64) and Multipart (File)
+    if (req.file) {
+      console.log(`[Upload Stream] Received via Multipart: ${req.file.originalname}`);
+      buffer = req.file.buffer;
+      fileName = req.file.originalname;
+      mimeType = req.file.mimetype;
+    } else {
+      const { fileName: fn, mimeType: mt, fileData } = req.body;
+      if (!fileData) {
+        console.error("[Upload Stream] No file data in request body");
+        return res.status(400).json({ 
+          error: 'No file provided',
+          message: 'Vui lòng cung cấp file qua Multipart hoặc JSON base64'
+        });
+      }
+      console.log(`[Upload Stream] Received via JSON: ${fn}`);
+      const base64Part = fileData.split(',')[1] || fileData;
+      buffer = Buffer.from(base64Part, 'base64');
+      fileName = fn || 'document.pdf';
+      mimeType = mt || 'application/pdf';
     }
 
-    console.log(`[Upload Stream] Starting processing for: ${fileName} (${mimeType})`);
-    sendEvent('uploading', 10);
-    const base64Part = fileData.split(',')[1];
-    if (!base64Part) {
-      throw new Error("Dữ liệu file không hợp lệ (thiếu base64 part)");
+    if (!process.env.LLAMA_API_KEYS && !process.env.LLAMA_API_KEY) {
+      throw new Error("Chưa cấu hình LLAMA_API_KEYS trong biến môi trường.");
     }
-    const buffer = Buffer.from(base64Part, 'base64');
+
+    sendEvent('uploading', 10);
     sendEvent('uploading', 20);
 
     const resultJson = await withLlamaKeyRotation(async (apiKey) => {
+      console.log("[Upload Stream] Sending to LlamaCloud...");
       const uploadData = new FormData();
-      const blob = new Blob([buffer], { type: mimeType });
-      uploadData.append('file', blob, fileName);
+      
+      // Handle both native FormData and form-data package
+      if (typeof (uploadData as any).append === 'function') {
+        if (typeof global.Blob !== 'undefined') {
+          const blob = new Blob([buffer], { type: mimeType });
+          uploadData.append('file', blob, fileName);
+        } else {
+          // Fallback for older Node.js with form-data package
+          (uploadData as any).append('file', buffer, { filename: fileName, contentType: mimeType });
+        }
+      }
+      
       uploadData.append('premium_mode', 'true');
       
       const instruction = `

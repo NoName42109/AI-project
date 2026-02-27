@@ -22,23 +22,25 @@ export const uploadService = {
     onProgress: (step: UploadStep, percent: number) => void
   ): Promise<ScanResult> {
     try {
+      // 0. Health Check
+      try {
+        const healthRes = await fetch('/api/health');
+        if (!healthRes.ok) console.warn("Server health check failed, proceeding anyway...");
+      } catch (e) {
+        console.warn("Could not reach health endpoint", e);
+      }
+
       onProgress('uploading', 5);
-      const base64String = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-      });
+      
+      // Use FormData for better performance and reliability
+      const formData = new FormData();
+      formData.append('file', file);
+      
       onProgress('uploading', 15);
 
       const response = await fetch('/api/math-ocr-stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type,
-          fileData: base64String,
-        }),
+        body: formData, // Browser automatically sets Content-Type to multipart/form-data
       });
 
       if (!response.ok) {

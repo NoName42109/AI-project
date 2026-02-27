@@ -15,9 +15,11 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase": "^12.9.0",
+    "form-data": "^4.0.5",
     "katex": "^0.16.32",
     "lucide-react": "^0.575.0",
     "multer": "^2.0.2",
+    "node-fetch": "^2.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.1"
