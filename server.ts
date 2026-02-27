@@ -156,14 +156,43 @@ app.post("/api/math-ocr", async (req, res) => {
           const resultData = await resultRes.json();
           
           const fullText = resultData.markdown || "";
-          const jsonMatch = fullText.match(/```json\n([\s\S]*?)\n```/) || fullText.match(/\{[\s\S]*\}/);
-          const cleanJsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : fullText;
+          const jsonMatch = fullText.match(/```(?:json)?\n([\s\S]*?)\n```/) || fullText.match(/\{[\s\S]*\}/);
+          const cleanJsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : fullText;
           
           try {
             parsedJson = JSON.parse(cleanJsonStr.trim());
+            
+            // Validate parsed JSON structure
+            if (!parsedJson.full_latex_document && !parsedJson.math_regions) {
+              throw new Error("Parsed JSON missing required fields");
+            }
             break;
           } catch (e) {
-            throw new Error("Llama Cloud trả về dữ liệu không đúng định dạng JSON");
+            console.warn("[LlamaParse] Không trả về JSON hợp lệ. Đang dùng Regex Fallback...");
+            
+            // Fallback: Tự động trích xuất công thức toán từ Markdown
+            const mathRegions: any[] = [];
+            const inlineMathRegex = /(?<!\$)\$([^$\n]+)\$(?!\$)/g;
+            const blockMathRegex = /\$\$([\s\S]+?)\$\$/g;
+            
+            let match;
+            while ((match = inlineMathRegex.exec(fullText)) !== null) {
+              if (match[1].trim()) {
+                mathRegions.push({ latex: match[1].trim(), confidence: 0.85 });
+              }
+            }
+            while ((match = blockMathRegex.exec(fullText)) !== null) {
+              if (match[1].trim()) {
+                mathRegions.push({ latex: match[1].trim(), confidence: 0.90 });
+              }
+            }
+            
+            parsedJson = {
+              raw_text: fullText.replace(/\$\$[\s\S]+?\$\$/g, '').replace(/\$[^$]+\$/g, ''),
+              math_regions: mathRegions,
+              full_latex_document: fullText
+            };
+            break;
           }
         }
         
