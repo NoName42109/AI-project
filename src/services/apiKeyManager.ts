@@ -94,23 +94,28 @@ class ApiKeyManager {
 
     for (const key of rawKeys) {
       const maskedKey = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-      const docId = `llamacloud_key_${maskedKey}`;
+      const docId = `llamacloud_key_${maskedKey.replace(/\*/g, '_')}`;
       
       try {
-        const keyRef = doc(db, 'api_keys', docId);
-        const keyDoc = await getDoc(keyRef);
-        
-        if (keyDoc.exists()) {
-          const data = keyDoc.data();
-          if (data.status === 'active' || data.status === 'low_quota') {
-            return { key, docId };
+        // Only try Firestore if it's initialized
+        const { isFirebaseInitialized } = await import('./firebase');
+        if (isFirebaseInitialized) {
+          const keyRef = doc(db, 'api_keys', docId);
+          const keyDoc = await getDoc(keyRef);
+          
+          if (keyDoc.exists()) {
+            const data = keyDoc.data();
+            if (data.status === 'active' || data.status === 'low_quota') {
+              return { key, docId };
+            }
+            continue; // Try next key if this one is disabled
           }
-        } else {
-          // If not in DB yet, it's a new key, safe to use
-          return { key, docId };
         }
+        
+        // If Firestore not initialized or key not in DB, use it as a fresh key
+        return { key, docId };
       } catch (error) {
-        console.error(`[ApiKeyManager] Error checking key status:`, error);
+        console.error(`[ApiKeyManager] Error checking key status for ${maskedKey}:`, error);
         // Fallback to use it anyway if DB read fails
         return { key, docId };
       }

@@ -298,13 +298,17 @@ app.post(["/api/math-ocr", "/math-ocr"], async (req, res) => {
 
 // API 3: Math OCR Stream (New Architecture)
 app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
+  let headersSent = false;
 
   const sendEvent = (step: string, percent: number, data?: any) => {
     try {
+      if (!headersSent) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        headersSent = true;
+      }
       res.write(`data: ${JSON.stringify({ step, percent, data })}\n\n`);
     } catch (e) {
       console.error("[SSE] Write failed", e);
@@ -316,13 +320,15 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
     
     if (!fileData) {
       console.error("[Upload Stream] No file data in request body");
-      sendEvent('error', 0, { message: 'No file provided' });
-      return res.end();
+      return res.status(400).json({ error: 'No file provided' });
     }
 
     console.log(`[Upload Stream] Starting processing for: ${fileName} (${mimeType})`);
     sendEvent('uploading', 10);
     const base64Part = fileData.split(',')[1];
+    if (!base64Part) {
+      throw new Error("Dữ liệu file không hợp lệ (thiếu base64 part)");
+    }
     const buffer = Buffer.from(base64Part, 'base64');
     sendEvent('uploading', 20);
 
@@ -476,5 +482,17 @@ async function startServer() {
 if (!process.env.VERCEL) {
   startServer();
 }
+
+// Global Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("[Global Error]", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({ 
+    error: err.message || "Internal Server Error",
+    details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
 
 export default app;
