@@ -5,8 +5,13 @@ import { apiKeyManager } from "./src/services/apiKeyManager";
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// Health Check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", time: new Date().toISOString() });
+});
 
 // Helper cho Auto Rotation
 async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<{ result: T, headers?: Headers }>): Promise<T> {
@@ -289,19 +294,26 @@ app.post("/api/math-ocr-stream", async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
 
   const sendEvent = (step: string, percent: number, data?: any) => {
-    res.write(`data: ${JSON.stringify({ step, percent, data })}\n\n`);
+    try {
+      res.write(`data: ${JSON.stringify({ step, percent, data })}\n\n`);
+    } catch (e) {
+      console.error("[SSE] Write failed", e);
+    }
   };
 
   try {
     const { fileName, mimeType, fileData } = req.body;
     
     if (!fileData) {
+      console.error("[Upload Stream] No file data in request body");
       sendEvent('error', 0, { message: 'No file provided' });
       return res.end();
     }
 
+    console.log(`[Upload Stream] Starting processing for: ${fileName} (${mimeType})`);
     sendEvent('uploading', 10);
     const base64Part = fileData.split(',')[1];
     const buffer = Buffer.from(base64Part, 'base64');

@@ -42,7 +42,15 @@ export const uploadService = {
       });
 
       if (!response.ok) {
-        throw new Error('Lỗi kết nối đến server');
+        let errorMsg = `Lỗi kết nối đến server (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMsg += `: ${errorData.message || errorData.error || JSON.stringify(errorData)}`;
+        } catch (e) {
+          const text = await response.text().catch(() => '');
+          if (text) errorMsg += `: ${text.substring(0, 100)}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const reader = response.body?.getReader();
