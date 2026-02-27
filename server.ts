@@ -65,14 +65,14 @@ async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string)
     const ai = new GoogleGenAI({ apiKey: activeKeyInfo.key });
     const result = await action(ai, activeKeyInfo.docId);
     // If successful, track usage
-    await apiKeyManager.trackUsage(activeKeyInfo.docId, true);
+    await apiKeyManager.trackUsage(activeKeyInfo.docId, true, activeKeyInfo.isCustom);
     return result;
   } catch (error: any) {
     const errorMsg = error.message || "";
     // Gemini quota errors often contain "429" or "quota"
     if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('403')) {
       console.warn(`[Auto Rotation] Key Gemini lỗi hoặc hết quota. Đang chuyển key...`);
-      await apiKeyManager.markKeyAsExhausted(activeKeyInfo.docId);
+      await apiKeyManager.markKeyAsExhausted(activeKeyInfo.docId, activeKeyInfo.isCustom);
       return withGeminiKeyRotation(action);
     } else {
       throw error;
@@ -85,12 +85,7 @@ app.get(["/api/keys/list", "/keys/list"], async (req, res) => {
   try {
     const keys = apiKeyManager.loadKeysFromEnv();
     
-    if (keys.length === 0) {
-      console.warn('[API Keys] GEMINI_API_KEYS is empty in environment variables.');
-      return res.json([]);
-    }
-
-    // Initialize missing keys in Firestore and get their status
+    // Initialize missing keys in Firestore and get their status (includes custom keys now)
     const results = await apiKeyManager.initializeMissingKeys();
     
     // Format results for the frontend component
@@ -120,6 +115,36 @@ app.post(["/api/keys/cleanup", "/keys/cleanup"], async (req, res) => {
     await apiKeyManager.cleanupOldData();
     res.json({ message: "Cleanup successful" });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API 1.2: Thêm API Key mới
+app.post(["/api/keys/add", "/keys/add"], async (req, res) => {
+  try {
+    const { key } = req.body;
+    if (!key || key.length < 20) {
+      return res.status(400).json({ error: "API Key không hợp lệ." });
+    }
+    await apiKeyManager.addCustomKey(key);
+    res.json({ message: "Thêm API Key thành công!" });
+  } catch (error: any) {
+    console.error('[API Keys] Error adding key:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API 1.3: Xóa API Key
+app.delete(["/api/keys/delete/:id", "/keys/delete/:id"], async (req, res) => {
+  try {
+    const id = req.params.id as string;
+    if (!id || !id.startsWith('custom_key_')) {
+      return res.status(400).json({ error: "Không thể xóa API Key hệ thống." });
+    }
+    await apiKeyManager.deleteCustomKey(id);
+    res.json({ message: "Xóa API Key thành công!" });
+  } catch (error: any) {
+    console.error('[API Keys] Error deleting key:', error);
     res.status(500).json({ error: error.message });
   }
 });

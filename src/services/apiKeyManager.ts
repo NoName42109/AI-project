@@ -38,6 +38,7 @@ class ApiKeyManager {
     // Check if Firebase is initialized
     const { isFirebaseInitialized } = await import('./firebase.js');
 
+    // 2a. Process Env Keys
     for (let i = 0; i < rawKeys.length; i++) {
       const key = rawKeys[i];
       const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
@@ -75,6 +76,30 @@ class ApiKeyManager {
       }
     }
 
+    // 2b. Fetch Custom Keys from Firestore
+    if (isFirebaseInitialized) {
+      try {
+        const { collection, getDocs, query, where } = await import('firebase/firestore');
+        const customKeysCol = collection(db, 'custom_api_keys');
+        const snapshot = await getDocs(customKeysCol);
+        
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          records.push({
+            id: docSnap.id,
+            maskedKey: data.maskedKey,
+            quotaRemainingPercent: data.quotaRemainingPercent,
+            status: data.status,
+            usageCount: data.usageCount,
+            lastUsed: data.lastUsed,
+            isNew: false
+          });
+        });
+      } catch (error) {
+        console.error("[ApiKeyManager] Error fetching custom keys:", error);
+      }
+    }
+
     return records;
   }
 
@@ -108,12 +133,46 @@ class ApiKeyManager {
   }
 
   /**
-   * Get an active key for processing
+   * Add a custom API key to Firestore
    */
-  async getActiveKey(): Promise<{ key: string, docId: string } | null> {
-    const rawKeys = this.loadKeysFromEnv();
-    if (rawKeys.length === 0) return null;
+  async addCustomKey(rawKey: string): Promise<void> {
+    const { isFirebaseInitialized } = await import('./firebase.js');
+    if (!isFirebaseInitialized) throw new Error("Firebase not initialized");
 
+    const maskedKey = rawKey.substring(0, 7) + '****' + rawKey.substring(rawKey.length - 4);
+    const docId = `custom_key_${Date.now()}`;
+
+    const newRecord = {
+      key: rawKey, // Store the actual key for server use
+      maskedKey,
+      quotaRemainingPercent: 100,
+      status: 'active',
+      usageCount: 0,
+      lastUsed: 0,
+      createdAt: Date.now()
+    };
+
+    const { collection, doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'custom_api_keys', docId), newRecord);
+  }
+
+  /**
+   * Delete a custom API key from Firestore
+   */
+  async deleteCustomKey(docId: string): Promise<void> {
+    const { isFirebaseInitialized } = await import('./firebase.js');
+    if (!isFirebaseInitialized) throw new Error("Firebase not initialized");
+
+    const { doc, deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db, 'custom_api_keys', docId));
+  }
+
+  /**
+   * Get an active key for processing (Env + Custom)
+   */
+  async getActiveKey(): Promise<{ key: string, docId: string, isCustom?: boolean } | null> {
+    // 1. Try Env Keys first
+    const rawKeys = this.loadKeysFromEnv();
     for (const key of rawKeys) {
       const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
       const docId = `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
@@ -138,6 +197,25 @@ class ApiKeyManager {
         return { key, docId };
       }
     }
+
+    // 2. Try Custom Keys from Firestore
+    try {
+      const { isFirebaseInitialized } = await import('./firebase.js');
+      if (isFirebaseInitialized) {
+        const { collection, getDocs, query, where, limit } = await import('firebase/firestore');
+        const customKeysCol = collection(db, 'custom_api_keys');
+        const q = query(customKeysCol, where('status', '!=', 'disabled'), limit(5));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const docSnap = snapshot.docs[0];
+          const data = docSnap.data();
+          return { key: data.key, docId: docSnap.id, isCustom: true };
+        }
+      }
+    } catch (error) {
+      console.error("[ApiKeyManager] Error fetching active custom key:", error);
+    }
     
     return null;
   }
@@ -145,9 +223,10 @@ class ApiKeyManager {
   /**
    * Update usage tracking
    */
-  async trackUsage(docId: string, isSuccess: boolean) {
+  async trackUsage(docId: string, isSuccess: boolean, isCustom: boolean = false) {
     try {
-      const keyRef = doc(db, 'api_keys', docId);
+      const collectionName = isCustom ? 'custom_api_keys' : 'api_keys';
+      const keyRef = doc(db, collectionName, docId);
       const keyDoc = await getDoc(keyRef);
       
       if (!keyDoc.exists()) return;
@@ -159,12 +238,8 @@ class ApiKeyManager {
 
       if (isSuccess) {
         newUsageCount += 1;
-        // Estimate quota: Assuming 1500 requests per key (free tier)
-        // This is a rough estimate as requested
         const estimatedLimit = 1500;
         newQuota = Math.max(0, ((estimatedLimit - newUsageCount) / estimatedLimit) * 100);
-      } else {
-        // If it failed with quota error, we'll handle it in markKeyAsExhausted
       }
 
       if (newQuota <= 0) newStatus = 'disabled';
@@ -187,9 +262,10 @@ class ApiKeyManager {
   /**
    * Mark key as exhausted
    */
-  async markKeyAsExhausted(docId: string) {
+  async markKeyAsExhausted(docId: string, isCustom: boolean = false) {
     try {
-      const keyRef = doc(db, 'api_keys', docId);
+      const collectionName = isCustom ? 'custom_api_keys' : 'api_keys';
+      const keyRef = doc(db, collectionName, docId);
       await updateDoc(keyRef, {
         quotaRemainingPercent: 0,
         status: 'disabled',

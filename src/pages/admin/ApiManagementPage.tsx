@@ -9,12 +9,15 @@ export interface ApiKeyRecord {
   status: 'active' | 'low_quota' | 'disabled';
   usageCount: number;
   lastUsed: number;
+  isNew?: boolean;
 }
 
 export const ApiManagementPage: React.FC = () => {
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [newKey, setNewKey] = useState<string>('');
+  const [addingKey, setAddingKey] = useState<boolean>(false);
 
   const fetchKeys = async () => {
     setLoading(true);
@@ -30,6 +33,56 @@ export const ApiManagementPage: React.FC = () => {
     } catch (err: any) {
       console.error("Lỗi khi tải API Keys:", err);
       setError('Không thể tải danh sách API Key. Vui lòng kiểm tra kết nối.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKey || newKey.length < 20) {
+      alert('Vui lòng nhập API Key hợp lệ.');
+      return;
+    }
+
+    setAddingKey(true);
+    try {
+      const response = await fetch('/api/keys/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: newKey })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Lỗi khi thêm key');
+      }
+
+      setNewKey('');
+      await fetchKeys();
+      alert('Thêm API Key thành công!');
+    } catch (err: any) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setAddingKey(false);
+    }
+  };
+
+  const handleDeleteKey = async (id: string) => {
+    if (!id.startsWith('custom_key_')) {
+      alert('Không thể xóa API Key từ biến môi trường.');
+      return;
+    }
+
+    if (!window.confirm('Bạn có chắc muốn xóa API Key này?')) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/keys/delete/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Delete failed');
+      await fetchKeys();
+    } catch (err: any) {
+      alert('Lỗi: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -125,6 +178,34 @@ export const ApiManagementPage: React.FC = () => {
           </button>
         </div>
       </div>
+      
+      {/* Form thêm API Key */}
+      <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm mb-8">
+        <h2 className="text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-green-600" />
+          Thêm API Key mới
+        </h2>
+        <form onSubmit={handleAddKey} className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="password"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+            placeholder="Nhập Gemini API Key của bạn..."
+            className="flex-grow px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
+            disabled={addingKey}
+          />
+          <button
+            type="submit"
+            disabled={addingKey || !newKey}
+            className="bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50 text-sm whitespace-nowrap"
+          >
+            {addingKey ? 'Đang thêm...' : 'Thêm Key'}
+          </button>
+        </form>
+        <p className="text-xs text-neutral-500 mt-3 italic">
+          * Key được thêm thủ công sẽ được lưu trữ trong Database và tham gia vào hệ thống Auto Rotation.
+        </p>
+      </div>
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-3">
@@ -156,10 +237,26 @@ export const ApiManagementPage: React.FC = () => {
                 className={`bg-white rounded-xl border ${config.border} shadow-sm overflow-hidden transition-all hover:shadow-md ${config.opacity}`}
               >
                 <div className={`px-5 py-3 border-b ${config.border} flex justify-between items-center bg-neutral-50/50`}>
-                  <span className="font-semibold text-neutral-800 capitalize">{key.service} API</span>
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.color}`}>
-                    {config.icon}
-                    {config.label}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-neutral-800 capitalize">{key.service} API</span>
+                    {key.id.startsWith('custom_key_') && (
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase">Custom</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.color}`}>
+                      {config.icon}
+                      {config.label}
+                    </div>
+                    {key.id.startsWith('custom_key_') && (
+                      <button 
+                        onClick={() => handleDeleteKey(key.id)}
+                        className="p-1 hover:bg-red-100 text-red-500 rounded transition-colors"
+                        title="Xóa Key này"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 
