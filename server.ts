@@ -183,7 +183,7 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
       console.log("[Gemini Stream] Processing with Gemini...");
       sendEvent('ocr', 40);
 
-      const model = "gemini-1.5-pro"; // Use Pro for better OCR and PDF handling
+      const model = "gemini-3.1-pro-preview"; // Use Gemini 3.1 Pro for superior Math OCR and reasoning
       
       const prompt = `
         Bạn là chuyên gia Toán học và OCR. Nhiệm vụ của bạn là đọc đề thi từ file PDF đính kèm và trích xuất dữ liệu.
