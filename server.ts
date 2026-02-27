@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import cors from "cors";
-import { apiKeyManager } from "./src/services/apiKeyManager";
+import { apiKeyManager } from "./src/services/apiKeyManager.js";
 import { GoogleGenAI } from "@google/genai";
 
 // Polyfill for Node.js environments where FormData/Blob/fetch might be missing or limited

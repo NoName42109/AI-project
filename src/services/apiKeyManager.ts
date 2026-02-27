@@ -1,4 +1,4 @@
-import { db } from './firebase';
+import { db } from './firebase.js';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 export interface ApiKeyRecord {
@@ -36,7 +36,7 @@ class ApiKeyManager {
     const records: ApiKeyRecord[] = [];
 
     // Check if Firebase is initialized
-    const { isFirebaseInitialized } = await import('./firebase');
+    const { isFirebaseInitialized } = await import('./firebase.js');
 
     for (let i = 0; i < rawKeys.length; i++) {
       const key = rawKeys[i];
@@ -82,7 +82,7 @@ class ApiKeyManager {
    * Cleanup old or invalid API key data from Firestore
    */
   async cleanupOldData() {
-    const { isFirebaseInitialized } = await import('./firebase');
+    const { isFirebaseInitialized } = await import('./firebase.js');
     if (!isFirebaseInitialized) return;
 
     try {
@@ -119,7 +119,7 @@ class ApiKeyManager {
       const docId = `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
       
       try {
-        const { isFirebaseInitialized } = await import('./firebase');
+        const { isFirebaseInitialized } = await import('./firebase.js');
         if (isFirebaseInitialized) {
           const keyRef = doc(db, 'api_keys', docId);
           const keyDoc = await getDoc(keyRef);
