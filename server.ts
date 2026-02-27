@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import cors from "cors";
 import { apiKeyManager } from "./src/services/apiKeyManager.js";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 // Polyfill for Node.js environments where FormData/Blob/fetch might be missing or limited
 // We use a more robust approach that avoids top-level await at the module root
@@ -54,7 +54,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // Helper cho Auto Rotation Gemini
-async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string) => Promise<T>): Promise<T> {
+async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string) => Promise<T>, attempt: number = 0): Promise<T> {
   const activeKeyInfo = await apiKeyManager.getActiveKey();
   
   if (!activeKeyInfo) {
@@ -69,11 +69,16 @@ async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string)
     return result;
   } catch (error: any) {
     const errorMsg = error.message || "";
-    // Gemini quota errors often contain "429" or "quota"
-    if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('403')) {
-      console.warn(`[Auto Rotation] Key Gemini lỗi hoặc hết quota. Đang chuyển key...`);
+    const isQuotaError = errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('403');
+    
+    if (isQuotaError && attempt < 3) {
+      console.warn(`[Auto Rotation] Key Gemini lỗi hoặc hết quota (Lần ${attempt + 1}). Đang thử lại với key khác...`);
       await apiKeyManager.markKeyAsExhausted(activeKeyInfo.docId, activeKeyInfo.isCustom);
-      return withGeminiKeyRotation(action);
+      
+      // Đợi một chút trước khi thử lại để tránh dính Rate Limit liên tục
+      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      
+      return withGeminiKeyRotation(action, attempt + 1);
     } else {
       throw error;
     }
@@ -208,59 +213,32 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
       console.log("[Gemini Stream] Processing with Gemini...");
       sendEvent('ocr', 40);
 
-      const model = "gemini-3.1-pro-preview"; // Use Gemini 3.1 Pro for superior Math OCR and reasoning
+      const model = "gemini-3-flash-preview"; 
       
-      const prompt = `
-        Bạn là chuyên gia Toán học và OCR. Nhiệm vụ của bạn là đọc đề thi từ file PDF đính kèm và trích xuất dữ liệu.
-        
-        YÊU CẦU:
-        1. OCR toàn bộ nội dung đề thi.
-        2. Chuẩn hóa tất cả công thức toán học sang LaTeX chuẩn.
-           - Phân số: \\frac{a}{b}
-           - Hệ phương trình: \\begin{cases} ... \\end{cases}
-           - Ký hiệu: \\Delta, \\forall, \\exists, x_1, x_2
-        3. Tách từng câu hỏi riêng biệt.
-        4. Phân loại dạng toán cho từng câu.
-        5. Xác định xem đề thi này có phải chuyên đề "Hệ thức Vi-ét" lớp 9 hay không.
-        
-        DẠNG TOÁN VI-ÉT:
-        - tim_m: Tìm m để phương trình có nghiệm thỏa mãn điều kiện.
-        - tinh_tong_tich: Tính giá trị biểu thức đối xứng.
-        - lap_pt: Lập phương trình bậc 2.
-        - other: Các dạng khác.
-
-        TRẢ VỀ DUY NHẤT JSON THEO FORMAT SAU:
-        {
-           "isViet": true/false,
-           "topic": "he_thuc_viet" hoặc "other",
-           "totalQuestions": number,
-           "questions": [
-              {
-                 "type": "tim_m" | "tinh_tong_tich" | "lap_pt" | "other",
-                 "difficulty": "easy" | "medium" | "hard",
-                 "latex": "nội dung câu hỏi bằng LaTeX chuẩn"
-              }
-           ]
-        }
-      `;
+      const systemInstruction = `Bạn là chuyên gia Toán học OCR. Trích xuất đề thi sang JSON: {"isViet":bool,"topic":string,"totalQuestions":int,"questions":[{"type":string,"difficulty":string,"latex":string}]}. Chuẩn hóa LaTeX. Phân loại: tim_m, tinh_tong_tich, lap_pt, other.`;
 
       const response = await ai.models.generateContent({
         model: model,
         contents: [
           {
             parts: [
-              { text: prompt },
               {
                 inlineData: {
                   mimeType: mimeType,
                   data: buffer.toString('base64')
                 }
-              }
+              },
+              { text: "Trích xuất dữ liệu từ tài liệu này." }
             ]
           }
         ],
         config: {
-          responseMimeType: "application/json"
+          systemInstruction: systemInstruction,
+          responseMimeType: "application/json",
+          temperature: 0,
+          topP: 0.1,
+          topK: 1,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
         }
       });
 
