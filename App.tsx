@@ -6,6 +6,7 @@ import { Login } from './src/pages/auth/Login';
 import { Register } from './src/pages/auth/Register';
 import { AdminDashboard } from './src/pages/admin/AdminDashboard';
 import { TeacherDashboard } from './src/pages/teacher/TeacherDashboard';
+import { TeacherUpload } from './src/pages/teacher/TeacherUpload';
 import { StudentDashboard } from './src/pages/student/StudentDashboard';
 import AppLayout from './src/layouts/AppLayout';
 
@@ -29,6 +30,7 @@ const App: React.FC = () => {
           <Route element={<ProtectedRoute allowedRoles={['teacher', 'admin']} />}>
             <Route path="/teacher" element={<AppLayout viewMode="TEACHER" setViewMode={() => {}} studentView="DASHBOARD" setStudentView={() => {}} teacherView="UPLOAD" setTeacherView={() => {}} />}>
               <Route path="dashboard" element={<TeacherDashboard />} />
+              <Route path="upload" element={<TeacherUpload />} />
             </Route>
           </Route>
 

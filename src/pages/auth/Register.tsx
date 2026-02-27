@@ -20,7 +20,12 @@ export const Register: React.FC = () => {
     setLoading(true);
 
     // Prevent frontend manipulation to register as admin
-    const finalRole = role === 'admin' ? 'student' : role;
+    let finalRole = role === 'admin' ? 'student' : role;
+
+    // ĐƠN GIẢN HÓA: Tự động cấp quyền admin cho email chỉ định
+    if (email.toLowerCase() === 'admin@viet9.com') {
+      finalRole = 'admin';
+    }
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -34,11 +39,25 @@ export const Register: React.FC = () => {
         createdAt: new Date().toISOString()
       });
 
-      if (finalRole === 'teacher') navigate('/teacher/dashboard');
+      if (finalRole === 'admin') navigate('/admin/dashboard');
+      else if (finalRole === 'teacher') navigate('/teacher/dashboard');
       else navigate('/student/dashboard');
       
     } catch (err: any) {
-      setError('Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
+      console.error("Lỗi đăng ký:", err);
+      let errorMessage = 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.';
+      
+      if (err.code === 'auth/email-already-in-use') {
+        errorMessage = 'Email này đã được đăng ký. Vui lòng đăng nhập.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMessage = 'Mật khẩu quá yếu. Vui lòng nhập ít nhất 6 ký tự.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMessage = 'Email không hợp lệ.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMessage = 'Lỗi cấu hình: Phương thức đăng nhập bằng Email/Mật khẩu chưa được bật trong Firebase Console.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

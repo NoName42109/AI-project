@@ -2,17 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Hàm hỗ trợ kiểm tra Role
+    // Hàm hỗ trợ kiểm tra Role an toàn (tránh lỗi khi document chưa tồn tại)
     function isAuthenticated() { return request.auth != null; }
+    function hasUserDoc() { return exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function isAdmin() { return isAuthenticated() && getUserData().role == 'admin'; }
-    function isTeacher() { return isAuthenticated() && getUserData().role == 'teacher'; }
-    function isStudent() { return isAuthenticated() && getUserData().role == 'student'; }
+    
+    function isAdmin() { return isAuthenticated() && hasUserDoc() && getUserData().role == 'admin'; }
+    function isTeacher() { return isAuthenticated() && hasUserDoc() && getUserData().role == 'teacher'; }
+    function isStudent() { return isAuthenticated() && hasUserDoc() && getUserData().role == 'student'; }
 
     // USERS
     match /users/{userId} {
+      // Cho phép user tự đọc/ghi document của chính mình, hoặc admin có toàn quyền
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
     }
 
     // EXAMS
@@ -45,6 +48,11 @@ service cloud.firestore {
     
     // CACHE (Chỉ cho phép đọc/ghi tự động từ App)
     match /question_cache/{hash} {
+      allow read, write: if isTeacher() || isAdmin();
+    }
+    
+    // API KEYS
+    match /api_keys/{keyId} {
       allow read, write: if isTeacher() || isAdmin();
     }
   }

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { LoadingScreen } from '../components/LoadingScreen';
 
 export type UserRole = 'student' | 'teacher' | 'admin';
@@ -20,6 +20,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
   useEffect(() => {
     let isMounted = true;
+    let unsubscribeDoc: () => void;
     
     // Timeout to prevent infinite loading
     const timeoutId = setTimeout(() => {
@@ -28,29 +29,42 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       }
     }, 5000);
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (!isMounted) return;
       
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+      }
+
       if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          // Always trust Firestore for role, never frontend state
-          const role = userDoc.exists() ? (userDoc.data().role as UserRole) : 'student';
-          setState({ user: firebaseUser, role, loading: false, error: false });
-        } catch (error) {
-          console.error("Error fetching user role:", error);
-          setState({ user: firebaseUser, role: 'student', loading: false, error: false });
-        }
+        // Use onSnapshot to listen for role changes (fixes race condition during registration)
+        unsubscribeDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), 
+          (userDoc) => {
+            if (!isMounted) return;
+            // Always trust Firestore for role, never frontend state
+            const role = userDoc.exists() ? (userDoc.data().role as UserRole) : 'student';
+            setState({ user: firebaseUser, role, loading: false, error: false });
+            clearTimeout(timeoutId);
+          },
+          (error) => {
+            console.error("Error fetching user role:", error);
+            if (isMounted) {
+              setState({ user: firebaseUser, role: 'student', loading: false, error: false });
+              clearTimeout(timeoutId);
+            }
+          }
+        );
       } else {
         setState({ user: null, role: null, loading: false, error: false });
+        clearTimeout(timeoutId);
       }
-      clearTimeout(timeoutId);
     });
 
     return () => {
       isMounted = false;
       clearTimeout(timeoutId);
-      unsubscribe();
+      unsubscribeAuth();
+      if (unsubscribeDoc) unsubscribeDoc();
     };
   }, []);
 

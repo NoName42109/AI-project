@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../../services/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export const TeacherDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,7 +52,10 @@ export const TeacherDashboard: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-neutral-200 bg-neutral-50 flex justify-between items-center">
           <h2 className="text-lg font-bold text-neutral-800">Đề Của Tôi</h2>
-          <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700">
+          <button 
+            onClick={() => navigate('/teacher/upload')}
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700"
+          >
             + Upload Đề Mới
           </button>
         </div>
