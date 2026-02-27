@@ -2,10 +2,9 @@ import { collection, addDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 export interface UsageLog {
-  llama_used: number;
-  llama_total: number;
-  llama_remaining_percent: number;
-  health: 'ok' | 'warning' | 'critical';
+  gemini_usage_count: number;
+  gemini_avg_quota: number;
+  active_keys: number;
   timestamp: number;
   date_string: string;
 }
@@ -14,7 +13,7 @@ export const usageService = {
   /**
    * Lưu lịch sử usage theo ngày vào Firestore
    */
-  async logUsage(data: UsageLog): Promise<void> {
+  async logUsage(data: Partial<UsageLog>): Promise<void> {
     try {
       await addDoc(collection(db, 'api_usage_logs'), {
         ...data,

@@ -95,8 +95,6 @@ app.get(["/api/keys/list", "/keys/list"], async (req, res) => {
     
     // Format results for the frontend component
     const formattedResults = results.map((record, index) => {
-      const isUnused = record.usageCount === 0;
-      
       return {
         id: record.id || `env_key_${index + 1}`,
         service: 'gemini',
@@ -105,7 +103,7 @@ app.get(["/api/keys/list", "/keys/list"], async (req, res) => {
         status: record.status,
         usageCount: record.usageCount,
         lastUsed: record.lastUsed,
-        isNew: isUnused
+        isNew: record.isNew
       };
     });
 
@@ -113,6 +111,16 @@ app.get(["/api/keys/list", "/keys/list"], async (req, res) => {
   } catch (error: any) {
     console.error('[API Keys] Error processing keys:', error);
     res.status(500).json({ error: 'Internal Server Error', details: error.message });
+  }
+});
+
+// API 1.1: Cleanup old keys
+app.post(["/api/keys/cleanup", "/keys/cleanup"], async (req, res) => {
+  try {
+    await apiKeyManager.cleanupOldData();
+    res.json({ message: "Cleanup successful" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -280,6 +288,8 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    // Cleanup old data on start
+    apiKeyManager.cleanupOldData().catch(err => console.error("Startup cleanup failed:", err));
   });
 }
 

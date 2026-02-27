@@ -35,6 +35,22 @@ export const ApiManagementPage: React.FC = () => {
     }
   };
 
+  const handleCleanup = async () => {
+    if (!window.confirm('Bạn có chắc muốn dọn dẹp dữ liệu API Key cũ trong database?')) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch('/api/keys/cleanup', { method: 'POST' });
+      if (!response.ok) throw new Error('Cleanup failed');
+      await fetchKeys();
+      alert('Dọn dẹp thành công!');
+    } catch (err: any) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchKeys();
   }, []);
@@ -90,14 +106,24 @@ export const ApiManagementPage: React.FC = () => {
             Giám sát Quota và trạng thái Auto Rotation của các dịch vụ Gemini AI.
           </p>
         </div>
-        <button 
-          onClick={fetchKeys}
-          disabled={loading}
-          className="flex items-center gap-2 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Làm mới
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={handleCleanup}
+            disabled={loading}
+            className="flex items-center gap-2 bg-white border border-red-200 hover:bg-red-50 text-red-600 text-sm font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
+            title="Dọn dẹp các key cũ không còn trong biến môi trường"
+          >
+            Dọn dẹp Data
+          </button>
+          <button 
+            onClick={fetchKeys}
+            disabled={loading}
+            className="flex items-center gap-2 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Làm mới
+          </button>
+        </div>
       </div>
 
       {error && (

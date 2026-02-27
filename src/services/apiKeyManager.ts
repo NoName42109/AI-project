@@ -35,46 +35,76 @@ class ApiKeyManager {
     const rawKeys = this.loadKeysFromEnv();
     const records: ApiKeyRecord[] = [];
 
+    // Check if Firebase is initialized
+    const { isFirebaseInitialized } = await import('./firebase');
+
     for (let i = 0; i < rawKeys.length; i++) {
       const key = rawKeys[i];
       const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
       const docId = `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
       
+      const defaultRecord: ApiKeyRecord = {
+        id: docId,
+        maskedKey,
+        quotaRemainingPercent: 100,
+        status: 'active',
+        usageCount: 0,
+        lastUsed: 0,
+        isNew: true
+      };
+
+      if (!isFirebaseInitialized) {
+        records.push(defaultRecord);
+        continue;
+      }
+
       try {
         const keyRef = doc(db, 'api_keys', docId);
         const keyDoc = await getDoc(keyRef);
 
         if (!keyDoc.exists()) {
-          const newRecord: ApiKeyRecord = {
-            id: docId,
-            maskedKey,
-            quotaRemainingPercent: 100,
-            status: 'active',
-            usageCount: 0,
-            lastUsed: 0,
-            isNew: true
-          };
-          await setDoc(keyRef, newRecord);
-          records.push(newRecord);
+          await setDoc(keyRef, defaultRecord);
+          records.push(defaultRecord);
         } else {
           const data = keyDoc.data() as ApiKeyRecord;
           records.push({ ...data, id: docId, maskedKey });
         }
       } catch (error) {
         console.error(`[ApiKeyManager] Error initializing key ${maskedKey}:`, error);
-        records.push({
-          id: docId,
-          maskedKey,
-          quotaRemainingPercent: 100,
-          status: 'active',
-          usageCount: 0,
-          lastUsed: 0,
-          isNew: true
-        });
+        records.push(defaultRecord);
       }
     }
 
     return records;
+  }
+
+  /**
+   * Cleanup old or invalid API key data from Firestore
+   */
+  async cleanupOldData() {
+    const { isFirebaseInitialized } = await import('./firebase');
+    if (!isFirebaseInitialized) return;
+
+    try {
+      const { collection, getDocs, deleteDoc } = await import('firebase/firestore');
+      const keysCol = collection(db, 'api_keys');
+      const snapshot = await getDocs(keysCol);
+      
+      const rawKeys = this.loadKeysFromEnv();
+      const currentDocIds = rawKeys.map(key => {
+        const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
+        return `gemini_key_${maskedKey.replace(/\*/g, '_')}`;
+      });
+
+      for (const docSnap of snapshot.docs) {
+        if (!currentDocIds.includes(docSnap.id)) {
+          console.log(`[ApiKeyManager] Cleaning up old key data: ${docSnap.id}`);
+          await deleteDoc(docSnap.ref);
+        }
+      }
+    } catch (error) {
+      console.error("[ApiKeyManager] Error during cleanup:", error);
+    }
   }
 
   /**

@@ -34,23 +34,33 @@ let auth: Auth;
 
 let isFirebaseInitialized = false;
 
-try {
-  if (!firebaseConfig.apiKey) {
-    console.warn("Firebase API Key is missing. App will run in Mock Mode.");
-  } else {
-    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-    db = getFirestore(app);
-    storage = getStorage(app);
-    auth = getAuth(app);
-    isFirebaseInitialized = true;
+function initialize() {
+  try {
+    if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+      console.warn("Firebase configuration is incomplete. App will run in Mock Mode.");
+      // Create dummy objects to prevent crash on import
+      db = {} as Firestore;
+      storage = {} as FirebaseStorage;
+      auth = {} as Auth;
+      isFirebaseInitialized = false;
+    } else {
+      app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      db = getFirestore(app);
+      storage = getStorage(app);
+      auth = getAuth(app);
+      isFirebaseInitialized = true;
+      console.log("[Firebase] Initialized successfully for project:", firebaseConfig.projectId);
+    }
+  } catch (error) {
+    console.error("Firebase initialization error:", error);
+    // Create dummy objects to prevent crash on import
+    db = {} as Firestore;
+    storage = {} as FirebaseStorage;
+    auth = {} as Auth;
+    isFirebaseInitialized = false;
   }
-} catch (error) {
-  console.error("Firebase initialization error:", error);
-  // Create dummy objects to prevent crash on import
-  db = {} as Firestore;
-  storage = {} as FirebaseStorage;
-  auth = {} as Auth;
-  isFirebaseInitialized = false;
 }
+
+initialize();
 
 export { db, storage, auth, isFirebaseInitialized };
