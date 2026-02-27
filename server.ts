@@ -6,7 +6,12 @@ import { apiKeyManager } from "./src/services/apiKeyManager";
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -47,7 +52,7 @@ async function withLlamaKeyRotation<T>(action: (apiKey: string) => Promise<{ res
 }
 
 // API 1: Lấy danh sách API Keys
-app.get("/api/keys/list", async (req, res) => {
+app.get(["/api/keys/list", "/keys/list"], async (req, res) => {
   try {
     const keys = apiKeyManager.loadKeysFromEnv();
     
@@ -84,7 +89,7 @@ app.get("/api/keys/list", async (req, res) => {
 });
 
 // API 2: Math OCR
-app.post("/api/math-ocr", async (req, res) => {
+app.post(["/api/math-ocr", "/math-ocr"], async (req, res) => {
   try {
     const { fileName, mimeType, fileData } = req.body;
     
@@ -292,7 +297,7 @@ app.post("/api/math-ocr", async (req, res) => {
 });
 
 // API 3: Math OCR Stream (New Architecture)
-app.post("/api/math-ocr-stream", async (req, res) => {
+app.post(["/api/math-ocr-stream", "/math-ocr-stream"], async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
