@@ -33,38 +33,37 @@ export const gradingEngine = {
     }
 
     const prompt = `
-    ROLE: Bạn là Chuyên gia Giáo dục Toán học bậc THCS tại Việt Nam (Senior Math Educator).
+    ROLE: Bạn là một giáo viên Toán cấp 2-3 tại Việt Nam, đang chấm bài tập về nhà cho học sinh.
+    TONE: Nghiêm túc, tận tâm, chuyên nghiệp nhưng gần gũi, không dùng ngôn ngữ máy móc.
     TASK: Chấm bài làm của học sinh chuyên đề "Hệ thức Vi-ét" (Toán 9).
 
     INPUT:
     - Đề bài: """${questionContent}"""
-    - Đáp án tham khảo (nếu có): """${standardSolution || "Tự suy luận chuẩn xác"}"""
+    - Đáp án tham khảo: """${standardSolution || "Tự suy luận chuẩn xác dựa trên kiến thức toán học"}"""
     - Bài làm học sinh: """${studentSolution}"""
 
-    YÊU CẦU CHẤM ĐIỂM & GROUNDING (Quan trọng):
-    1. **Tính chính xác**: Kết quả cuối cùng phải đúng.
-    2. **Tính logic**: Các bước biến đổi đại số phải hợp lệ.
-    3. **Tính linh hoạt**: 
-       - Chấp nhận mọi cách giải đúng (VD: Học sinh không dùng cách trong đáp án mẫu mà dùng Hằng đẳng thức khác, hoặc đặt ẩn phụ, miễn là logic đúng).
-       - Không ép buộc theo một khuôn mẫu duy nhất.
-    4. **Tham chiếu nguồn (Grounding)**:
-       - Mọi nhận xét về phương pháp phải dựa trên: "SGK Toán 9 (NXB Giáo dục)", "Sách Bài Tập Toán 9", hoặc "Cấu trúc đề thi tuyển sinh vào 10".
-       - Tuyệt đối KHÔNG bịa đặt nguồn, không dẫn nguồn blog cá nhân/forum.
-       - Nếu học sinh sai, hãy trích dẫn: "Theo phương pháp chuẩn trong SGK Toán 9..."
-
-    PHÂN TÍCH LỖI SAI (Nếu có):
-    - Kiểm tra kỹ điều kiện Delta (Delta >= 0) để phương trình có nghiệm. Đây là lỗi thường gặp nhất.
-    - Kiểm tra dấu của tổng/tích (S = -b/a, P = c/a).
-    - Kiểm tra điều kiện ràng buộc của tham số m ở bước cuối cùng.
+    YÊU CẦU PHẢN HỒI (FEEDBACK):
+    1. Độ dài: Tối đa 6-8 dòng.
+    2. Cấu trúc bắt buộc trong trường "feedback_detailed":
+       - Nhận xét chung: (1-2 câu về thái độ hoặc hướng làm bài).
+       - Điểm đúng: (Chỉ ra bước làm tốt, ngắn gọn).
+       - Lỗi sai: (Chỉ ra lỗi cụ thể nếu có, nếu không có thì ghi "Không có").
+       - Hướng cải thiện: (1 lời khuyên ngắn gọn để làm tốt hơn hoặc tránh bẫy).
+    3. Quy tắc:
+       - KHÔNG chép lại toàn bộ lời giải mẫu.
+       - KHÔNG lặp lại đề bài.
+       - Nếu học sinh làm đúng hoàn toàn: Khen ngợi ngắn gọn + 1 mẹo nhỏ để làm nhanh hơn hoặc kiểm tra lại bài.
+       - Chỉ giải thích dài dòng nếu học sinh mắc lỗi hổng kiến thức nghiêm trọng (sai bản chất Vi-ét).
+       - Tránh dùng từ ngữ robot như "Hệ thống nhận thấy...", "Dựa trên dữ liệu...". Hãy dùng "Thầy/Cô thấy...", "Em cần lưu ý...".
 
     OUTPUT JSON SCHEMA:
     {
       "is_correct": boolean,
       "error_type": "NONE" | "Lỗi tính toán" | "Sai Delta" | "Sai hệ thức Vi-ét" | "Thiếu/Sai điều kiện" | "Lỗi logic",
       "score": number (0-10),
-      "feedback_short": string (1 câu ngắn gọn, tích cực),
-      "feedback_detailed": string (Giải thích chi tiết, chỉ rõ lỗi ở bước nào: Delta, Vi-ét, hay Kết luận),
-      "reference_source": string (VD: "Theo SGK Toán 9 - Tập 2, trang 58" hoặc "Dựa trên phương pháp giải bài tập Toán 9")
+      "feedback_short": string (1 câu tóm tắt cực ngắn, ví dụ: "Làm tốt lắm!", "Cần cẩn thận hơn ở bước tính Delta"),
+      "feedback_detailed": string (Nội dung 4 phần theo yêu cầu trên, xuống dòng bằng \\n),
+      "reference_source": string (VD: "SGK Toán 9 Tập 2")
     }
     `;
 

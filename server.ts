@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import cors from "cors";
 import { apiKeyManager } from "./src/services/apiKeyManager.js";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 // Polyfill for Node.js environments where FormData/Blob/fetch might be missing or limited
 // We use a more robust approach that avoids top-level await at the module root
@@ -55,10 +55,18 @@ app.get("/api/health", (req, res) => {
 
 // Helper cho Auto Rotation Gemini
 async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string) => Promise<T>, attempt: number = 0): Promise<T> {
-  const activeKeyInfo = await apiKeyManager.getActiveKey();
+  let activeKeyInfo = await apiKeyManager.getActiveKey();
   
   if (!activeKeyInfo) {
-    throw new Error('Tất cả API keys Gemini đều đã hết Quota hoặc chưa được cấu hình.');
+    // Fallback: Nếu tất cả đều disabled, thử dùng lại key đầu tiên trong ENV
+    const keys = apiKeyManager.loadKeysFromEnv();
+    if (keys.length > 0) {
+      const key = keys[0];
+      const maskedKey = key.substring(0, 7) + '****' + key.substring(key.length - 4);
+      activeKeyInfo = { key, docId: `gemini_key_${maskedKey.replace(/\*/g, '_')}` };
+    } else {
+      throw new Error('Chưa cấu hình API keys Gemini.');
+    }
   }
 
   try {
@@ -68,16 +76,18 @@ async function withGeminiKeyRotation<T>(action: (ai: GoogleGenAI, docId: string)
     await apiKeyManager.trackUsage(activeKeyInfo.docId, true, activeKeyInfo.isCustom);
     return result;
   } catch (error: any) {
-    const errorMsg = error.message || "";
-    const isQuotaError = errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('403');
+    const errorMsg = error.message?.toLowerCase() || "";
+    const isQuota = errorMsg.includes('quota') || errorMsg.includes('exhausted');
+    const isRateLimit = errorMsg.includes('429') && !isQuota;
+    const isAuthError = errorMsg.includes('403') || errorMsg.includes('api_key_invalid');
     
-    if (isQuotaError && attempt < 3) {
-      console.warn(`[Auto Rotation] Key Gemini lỗi hoặc hết quota (Lần ${attempt + 1}). Đang thử lại với key khác...`);
+    if ((isQuota || isAuthError) && attempt < 3) {
+      console.warn(`[Auto Rotation] Key Gemini hết quota hoặc lỗi xác thực (Lần ${attempt + 1}). Đang chuyển key...`);
       await apiKeyManager.markKeyAsExhausted(activeKeyInfo.docId, activeKeyInfo.isCustom);
-      
-      // Đợi một chút trước khi thử lại để tránh dính Rate Limit liên tục
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-      
+      return withGeminiKeyRotation(action, attempt + 1);
+    } else if (isRateLimit && attempt < 3) {
+      console.warn(`[Auto Rotation] Key Gemini bị Rate Limit (Lần ${attempt + 1}). Đang đợi để thử lại...`);
+      await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
       return withGeminiKeyRotation(action, attempt + 1);
     } else {
       throw error;
@@ -215,7 +225,7 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
 
       const model = "gemini-3-flash-preview"; 
       
-      const systemInstruction = `Bạn là chuyên gia Toán học OCR. Trích xuất đề thi sang JSON: {"isViet":bool,"topic":string,"totalQuestions":int,"questions":[{"type":string,"difficulty":string,"latex":string}]}. Chuẩn hóa LaTeX. Phân loại: tim_m, tinh_tong_tich, lap_pt, other.`;
+      const systemInstruction = `Bạn là chuyên gia Toán học OCR. Trích xuất đề thi sang JSON. Chuẩn hóa LaTeX. Phân loại: tim_m, tinh_tong_tich, lap_pt, other.`;
 
       const response = await ai.models.generateContent({
         model: model,
@@ -235,10 +245,30 @@ app.post(["/api/math-ocr-stream", "/math-ocr-stream"], upload.single('file'), as
         config: {
           systemInstruction: systemInstruction,
           responseMimeType: "application/json",
-          temperature: 0,
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isViet: { type: Type.BOOLEAN, description: "Có phải chuyên đề Hệ thức Vi-ét lớp 9 không?" },
+              topic: { type: Type.STRING, description: "he_thuc_viet hoặc other" },
+              totalQuestions: { type: Type.INTEGER },
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    type: { type: Type.STRING, description: "tim_m, tinh_tong_tich, lap_pt, hoặc other" },
+                    difficulty: { type: Type.STRING, description: "easy, medium, hoặc hard" },
+                    latex: { type: Type.STRING, description: "Nội dung câu hỏi bằng LaTeX chuẩn" }
+                  },
+                  required: ["type", "difficulty", "latex"]
+                }
+              }
+            },
+            required: ["isViet", "topic", "totalQuestions", "questions"]
+          },
+          temperature: 0.1,
           topP: 0.1,
-          topK: 1,
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+          topK: 1
         }
       });
 
