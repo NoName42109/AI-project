@@ -59,7 +59,7 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
         };
         setQuestion(processed);
       } else {
-        alert("Không tìm thấy câu hỏi nào trong kho dữ liệu.");
+        setQuestion(null);
       }
     } catch (error) {
       console.error("Error fetching question:", error);
@@ -132,9 +132,26 @@ const StudentPracticeView: React.FC<StudentPracticeViewProps> = ({ onBack }) => 
 
   if (!question) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-surface">
-        <p className="text-neutral-500 mb-4">Không có dữ liệu câu hỏi.</p>
-        <button onClick={onBack} className="text-primary-600 hover:underline">Quay lại</button>
+      <div className="flex flex-col items-center justify-center h-full bg-surface p-6 text-center">
+        <div className="w-20 h-20 bg-neutral-100 rounded-full flex items-center justify-center mb-6">
+          <svg className="w-10 h-10 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-bold text-neutral-800 mb-2">Chưa có dữ liệu câu hỏi</h2>
+        <p className="text-neutral-500 max-w-md mb-8">
+          Hệ thống hiện tại chưa có câu hỏi nào trong kho dữ liệu. Vui lòng yêu cầu giáo viên tải lên tài liệu đề thi để bắt đầu luyện tập.
+          <br /><br />
+          <span className="text-sm italic text-neutral-400">
+            * Theo quy định của hệ thống, AI chỉ được phép sử dụng các câu hỏi có sẵn từ tài liệu do giáo viên cung cấp, không được tự động sinh thêm câu hỏi mới.
+          </span>
+        </p>
+        <button 
+          onClick={onBack} 
+          className="bg-primary-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-primary-700 transition-colors shadow-sm"
+        >
+          Quay lại trang chủ
+        </button>
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { db } from './firebase';
 import { collection, addDoc } from 'firebase/firestore';
+import { questionBankService } from '../../services/questionBankService';
 
 export type UploadStep = 'idle' | 'uploading' | 'ocr' | 'normalize' | 'classifying' | 'saving' | 'done' | 'error';
 
@@ -125,6 +126,25 @@ export const uploadService = {
     };
 
     const docRef = await addDoc(collection(db, 'exams'), examData);
+
+    // Save individual questions to the question bank
+    if (result.questions && result.questions.length > 0) {
+      const questionsToSave = result.questions.map((q) => ({
+        content_latex: q.latex,
+        difficulty: q.difficulty.toUpperCase(),
+        sub_topic: q.type,
+        status: 'PUBLISHED',
+        source_file: title,
+        uploadedBy: userId
+      }));
+      
+      try {
+        await questionBankService.batchCreateQuestions(questionsToSave as any);
+      } catch (error) {
+        console.error("Failed to save individual questions to bank:", error);
+      }
+    }
+
     return docRef.id;
   }
 };
