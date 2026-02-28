@@ -9,6 +9,7 @@ import { ApiManagementPage } from './src/pages/admin/ApiManagementPage';
 import { TeacherDashboard } from './src/pages/teacher/TeacherDashboard';
 import { TeacherUpload } from './src/pages/teacher/TeacherUpload';
 import { StudentDashboard } from './src/pages/student/StudentDashboard';
+import { StudentPractice } from './src/pages/student/StudentPractice';
 import AppLayout from './src/layouts/AppLayout';
 
 const App: React.FC = () => {
@@ -40,6 +41,7 @@ const App: React.FC = () => {
           <Route element={<ProtectedRoute allowedRoles={['student']} />}>
             <Route path="/student" element={<AppLayout viewMode="STUDENT" setViewMode={() => {}} studentView="DASHBOARD" setStudentView={() => {}} teacherView="UPLOAD" setTeacherView={() => {}} />}>
               <Route path="dashboard" element={<StudentDashboard />} />
+              <Route path="practice" element={<StudentPractice />} />
             </Route>
           </Route>
         </Routes>

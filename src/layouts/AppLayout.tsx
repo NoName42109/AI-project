@@ -31,6 +31,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({
   const isMobile = useMobile();
   const { user, role } = useAuth();
   const navigate = useNavigate();
+  const location = window.location.pathname;
+
+  const currentStudentView: StudentView = location.includes('/student/practice') ? 'PRACTICE' : 'DASHBOARD';
+  const isPracticeMode = viewMode === 'STUDENT' && currentStudentView === 'PRACTICE';
 
   const handleLogout = async () => {
     try {
@@ -63,8 +67,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({
     }
   ];
 
-  const isPracticeMode = viewMode === 'STUDENT' && studentView === 'PRACTICE';
-
   return (
     <div className="flex h-screen bg-surface overflow-hidden font-sans text-neutral-800">
       
@@ -94,10 +96,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                     onClick={() => {
                       setStudentView(item.id as StudentView);
                       if (item.id === 'DASHBOARD') navigate('/student/dashboard');
+                      if (item.id === 'PRACTICE') navigate('/student/practice');
                     }}
-                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${studentView === item.id ? 'bg-pastel-blue text-primary-700' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
+                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${currentStudentView === item.id ? 'bg-pastel-blue text-primary-700' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900'}`}
                   >
-                    {item.icon(studentView === item.id)}
+                    {item.icon(currentStudentView === item.id)}
                     {item.label}
                   </button>
                 ))}
@@ -189,13 +192,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                 onClick={() => {
                   setStudentView(item.id as StudentView);
                   if (item.id === 'DASHBOARD') navigate('/student/dashboard');
+                  if (item.id === 'PRACTICE') navigate('/student/practice');
                 }}
                 className="flex flex-col items-center justify-center w-full h-full gap-1"
               >
-                <div className={`${studentView === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>
-                  {item.icon(studentView === item.id)}
+                <div className={`${currentStudentView === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>
+                  {item.icon(currentStudentView === item.id)}
                 </div>
-                <span className={`text-[10px] font-medium ${studentView === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>
+                <span className={`text-[10px] font-medium ${currentStudentView === item.id ? 'text-primary-600' : 'text-neutral-400'}`}>
                   {item.label}
                 </span>
               </button>
